@@ -1,0 +1,40 @@
+name: Build rootless tweak
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  package:
+    runs-on: macos-14
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Theos dependencies
+        run: brew install ldid dpkg
+
+      - name: Install Theos
+        run: |
+          git clone --depth 1 https://github.com/theos/theos.git "$RUNNER_TEMP/theos"
+          echo "THEOS=$RUNNER_TEMP/theos" >> "$GITHUB_ENV"
+          echo "THEOS_MAKE_PATH=$RUNNER_TEMP/theos/makefiles" >> "$GITHUB_ENV"
+
+      - name: Install iOS SDK
+        run: |
+          git clone --depth 1 https://github.com/theos/sdks.git "$RUNNER_TEMP/sdks"
+          mkdir -p "$RUNNER_TEMP/theos/sdks"
+          cp -R "$RUNNER_TEMP/sdks/iPhoneOS.sdk" "$RUNNER_TEMP/theos/sdks/"
+
+      - name: Package rootless deb
+        run: make package THEOS="$THEOS" THEOS_PACKAGE_SCHEME=rootless FINALPACKAGE=1
+
+      - name: Upload deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fudai-ios-rootless-deb
+          path: packages/*.deb
+          if-no-files-found: error
