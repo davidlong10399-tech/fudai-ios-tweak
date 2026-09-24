@@ -190,7 +190,8 @@ static void FDLog(NSString *format, ...) {
 %hook AWELuckyCatBannerView
 - (void)didMoveToWindow {
     %orig();
-    if (self.window && self.isHidden == NO) {
+    UIView *banner = (UIView *)self;
+    if (banner.window && banner.hidden == NO) {
         [[FDCoordinator shared] candidateFound:self source:@"AWELuckyCatBannerView"];
     }
 }
