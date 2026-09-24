@@ -37,9 +37,17 @@ jobs:
           set -euo pipefail
           deb=$(find packages -maxdepth 1 -name '*.deb' -print -quit)
           test -n "$deb"
-          test "$(dpkg-deb -f "$deb" Architecture)" = "iphoneos-arm64e"
-          ! dpkg-deb -c "$deb" | grep -E 'var/jb/var/jb|^.* ./var/jb/'
-          dpkg-deb -c "$deb" | grep -E 'Library/MobileSubstrate/DynamicLibraries/FuDai\.(dylib|plist)'
+          arch="$(dpkg-deb -f "$deb" Architecture)"
+          echo "package arch: $arch"
+          case "$arch" in
+            iphoneos-arm64|iphoneos-arm64e) ;;
+            *) echo "unexpected arch: $arch"; exit 1 ;;
+          esac
+          # 不允许出现双重 var/jb 路径（打包错误）
+          ! dpkg-deb -c "$deb" | grep -E 'var/jb/var/jb'
+          # 必须包含 dylib 与过滤器 plist
+          dpkg-deb -c "$deb" | grep -E 'Library/MobileSubstrate/DynamicLibraries/FuDai\.dylib'
+          dpkg-deb -c "$deb" | grep -E 'Library/MobileSubstrate/DynamicLibraries/FuDai\.plist'
 
       - name: Upload deb artifact
         uses: actions/upload-artifact@v4
