@@ -23,11 +23,11 @@ jobs:
           echo "THEOS=$RUNNER_TEMP/theos" >> "$GITHUB_ENV"
           echo "THEOS_MAKE_PATH=$RUNNER_TEMP/theos/makefiles" >> "$GITHUB_ENV"
 
-      - name: Install iOS SDK
+      - name: Select Apple SDK
         run: |
-          git clone --depth 1 https://github.com/theos/sdks.git "$RUNNER_TEMP/sdks"
-          mkdir -p "$RUNNER_TEMP/theos/sdks"
-          cp -R "$RUNNER_TEMP/sdks/iPhoneOS.sdk" "$RUNNER_TEMP/theos/sdks/"
+          SDK_PATH="$(xcrun --sdk iphoneos --show-sdk-path)"
+          mkdir -p "$THEOS/sdks"
+          ln -s "$SDK_PATH" "$THEOS/sdks/iPhoneOS.sdk"
 
       - name: Package rootless deb
         run: make package THEOS="$THEOS" THEOS_PACKAGE_SCHEME=rootless FINALPACKAGE=1
