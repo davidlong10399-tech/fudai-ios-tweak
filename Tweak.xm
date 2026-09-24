@@ -188,7 +188,12 @@ static void FDLog(NSString *format, ...) {
 %end
 
 %hook AWELuckyCatBannerView
-- (void)didMoveToWindow { %orig; if (self.window && self.isHidden == NO) [[FDCoordinator shared] candidateFound:self source:@"AWELuckyCatBannerView"]; }
+- (void)didMoveToWindow {
+    %orig();
+    if (self.window && self.isHidden == NO) {
+        [[FDCoordinator shared] candidateFound:self source:@"AWELuckyCatBannerView"];
+    }
+}
 %end
 
 %ctor {
