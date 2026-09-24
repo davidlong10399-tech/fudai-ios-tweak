@@ -162,14 +162,29 @@ static void FDLog(NSString *format, ...) {
 %end
 
 %hook AWEIMDouyinRedPacketComponent
-- (void)redPacketDidTapped { [[FDCoordinator shared] redPacketTapped]; %orig; }
-- (void)openRedPacketWithOrderId:(id)orderId completion:(id)completion { [[FDCoordinator shared] candidateFound:self source:@"openRedPacketWithOrderId:completion:"]; %orig; }
-- (void)openRedPacketWithOrderId:(id)orderId extParams:(id)params completion:(id)completion { [[FDCoordinator shared] candidateFound:self source:@"openRedPacketWithOrderId:extParams:completion:"]; %orig; }
+- (void)redPacketDidTapped {
+    [[FDCoordinator shared] redPacketTapped];
+    %orig();
+}
+- (void)openRedPacketWithOrderId:(id)orderId completion:(id)completion {
+    [[FDCoordinator shared] candidateFound:self source:@"openRedPacketWithOrderId:completion:"];
+    %orig(orderId, completion);
+}
+- (void)openRedPacketWithOrderId:(id)orderId extParams:(id)params completion:(id)completion {
+    [[FDCoordinator shared] candidateFound:self source:@"openRedPacketWithOrderId:extParams:completion:"];
+    %orig(orderId, params, completion);
+}
 %end
 
 %hook AWEIMDouyinRedPacketDataManager
-- (void)fetchRedPacketInfoWithOrderId:(id)orderId completion:(id)completion { [[FDCoordinator shared] candidateFound:self source:@"fetchRedPacketInfoWithOrderId:completion:"]; %orig; }
-- (void)fetchRedPacketInfoWithOrderId:(id)orderId params:(id)params completion:(id)completion { [[FDCoordinator shared] candidateFound:self source:@"fetchRedPacketInfoWithOrderId:params:completion:"]; %orig; }
+- (void)fetchRedPacketInfoWithOrderId:(id)orderId completion:(id)completion {
+    [[FDCoordinator shared] candidateFound:self source:@"fetchRedPacketInfoWithOrderId:completion:"];
+    %orig(orderId, completion);
+}
+- (void)fetchRedPacketInfoWithOrderId:(id)orderId params:(id)params completion:(id)completion {
+    [[FDCoordinator shared] candidateFound:self source:@"fetchRedPacketInfoWithOrderId:params:completion:"];
+    %orig(orderId, params, completion);
+}
 %end
 
 %hook AWELuckyCatBannerView
