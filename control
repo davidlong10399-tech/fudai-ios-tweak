@@ -1,0 +1,10 @@
+Package: com.fudai.ios
+Name: FuDai iOS
+Version: 0.1.0
+Architecture: iphoneos-arm64e
+Description: Douyin red packet helper
+Maintainer: local
+Author: local
+Section: Tweaks
+Priority: optional
+Depends: mobilesubstrate | org.coolstar.libhooker | ellekit
