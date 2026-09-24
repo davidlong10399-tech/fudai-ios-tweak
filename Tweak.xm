@@ -27,7 +27,7 @@ static NSString * const FDDebugKey = @"fudai.debug";
 
 static BOOL FDEnabled(void) {
     NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
-    if ([d objectForKey:FDEnabledKey] == nil) [d setBool:YES forKey:FDEnabledKey];
+    if ([d objectForKey:FDEnabledKey] == nil) [d setBool:NO forKey:FDEnabledKey];
     return [d boolForKey:FDEnabledKey];
 }
 
@@ -136,6 +136,7 @@ static void FDLog(NSString *format, ...) {
         if (self->_window) return;
         UIWindowScene *scene = nil;
         for (UIScene *s in UIApplication.sharedApplication.connectedScenes) if ([s isKindOfClass:UIWindowScene.class]) { scene=(UIWindowScene *)s; break; }
+        if (!scene) return;
         self->_window = [[UIWindow alloc] initWithWindowScene:scene];
         self->_window.frame = CGRectMake(12, 140, 116, 44);
         self->_window.windowLevel = UIWindowLevelAlert - 1;
@@ -199,7 +200,7 @@ static void FDLog(NSString *format, ...) {
 
 %ctor {
     @autoreleasepool {
-        [NSUserDefaults.standardUserDefaults registerDefaults:@{FDEnabledKey:@YES, FDDelayKey:@0, FDCooldownKey:@20, FDDailyLimitKey:@30, FDDebugKey:@NO}];
+        [NSUserDefaults.standardUserDefaults registerDefaults:@{FDEnabledKey:@NO, FDDelayKey:@0, FDCooldownKey:@20, FDDailyLimitKey:@30, FDDebugKey:@NO}];
         FDLog(@"loaded bundle=%@", NSBundle.mainBundle.bundleIdentifier);
     }
 }

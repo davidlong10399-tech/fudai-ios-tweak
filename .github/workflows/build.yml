@@ -32,6 +32,15 @@ jobs:
       - name: Package rootless deb
         run: make package THEOS="$THEOS" THEOS_PACKAGE_SCHEME=rootless FINALPACKAGE=1
 
+      - name: Validate package layout
+        run: |
+          set -euo pipefail
+          deb=$(find packages -maxdepth 1 -name '*.deb' -print -quit)
+          test -n "$deb"
+          test "$(dpkg-deb -f "$deb" Architecture)" = "iphoneos-arm64e"
+          ! dpkg-deb -c "$deb" | grep -E 'var/jb/var/jb|^.* ./var/jb/'
+          dpkg-deb -c "$deb" | grep -E 'Library/MobileSubstrate/DynamicLibraries/FuDai\.(dylib|plist)'
+
       - name: Upload deb artifact
         uses: actions/upload-artifact@v4
         with:
