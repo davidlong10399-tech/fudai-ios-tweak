@@ -9,6 +9,7 @@
 - (void)install;
 - (void)remove;
 - (void)toggle;
+- (void)togglePanel;
 - (void)updateStatus:(NSString *)status;
 @end
 
@@ -16,6 +17,7 @@
 + (instancetype)shared;
 - (void)start;
 - (void)stop;
+- (NSInteger)dailyCount;
 - (void)candidateFound:(id)object source:(NSString *)source;
 - (void)redPacketTapped;
 @end
@@ -122,19 +124,25 @@ static void FDLog(NSString *format, ...) {
 }
 
 - (void)redPacketTapped { self->_lastTrigger = [NSDate date]; }
+
+- (NSInteger)dailyCount { return self->_dailyCount; }
 @end
 
 @implementation FDFloatingController {
     UIWindow *_window;
     UIButton *_button;
-    UILabel *_label;
     UIPanGestureRecognizer *_pan;
+    UIWindow *_panelWindow;
+    UILabel *_statusLabel;
+    UISwitch *_enabledSwitch;
+    UISwitch *_debugSwitch;
+    UITextField *_delayField;
+    UITextField *_cooldownField;
+    UITextField *_limitField;
 }
 
 + (instancetype)shared { static FDFloatingController *x; static dispatch_once_t once; dispatch_once(&once, ^{ x=[self new]; }); return x; }
 
-// 修复点1: 原来靠 hook UIApplication 的 delegate 方法触发，永远不会被调用。
-// 现在由 UIApplicationDidFinishLaunchingNotification 触发，且场景未就绪时自动重试。
 - (void)install {
     [self installWithRetry:15];
 }
@@ -166,6 +174,7 @@ static void FDLog(NSString *format, ...) {
         self->_button.frame = box.bounds;
         [self->_button setTitle:(FDEnabled() ? @"福袋 · 开" : @"福袋 · 关") forState:UIControlStateNormal];
         [self->_button setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
+        self->_button.titleLabel.font = [UIFont boldSystemFontOfSize:13];
         [self->_button addTarget:self action:@selector(toggle) forControlEvents:UIControlEventTouchUpInside];
         [box addSubview:self->_button];
         self->_pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(pan:)];
@@ -184,16 +193,151 @@ static void FDLog(NSString *format, ...) {
     });
 }
 
-- (void)toggle {
-    BOOL enabled = !FDEnabled();
-    [NSUserDefaults.standardUserDefaults setBool:enabled forKey:FDEnabledKey];
-    [self->_button setTitle:(enabled ? @"福袋 · 开" : @"福袋 · 关") forState:UIControlStateNormal];
-    if (enabled) [[FDCoordinator shared] start]; else [[FDCoordinator shared] stop];
+// 点击悬浮按钮 = 打开/收起设置面板
+- (void)toggle { [self togglePanel]; }
+
+- (void)togglePanel {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (self->_panelWindow) {
+            [self->_panelWindow resignFirstResponder];
+            [self saveFields];
+            self->_panelWindow.hidden = YES;
+            self->_panelWindow = nil;
+            return;
+        }
+        [self showPanel];
+    });
+}
+
+- (UIWindowScene *)activeScene {
+    for (UIScene *s in UIApplication.sharedApplication.connectedScenes) {
+        if ([s isKindOfClass:UIWindowScene.class]) return (UIWindowScene *)s;
+    }
+    return nil;
+}
+
+- (void)showPanel {
+    UIWindowScene *scene = [self activeScene];
+    if (!scene) return;
+    UIWindow *w = [[UIWindow alloc] initWithWindowScene:scene];
+    w.frame = CGRectMake(24, 110, 280, 400);
+    w.windowLevel = UIWindowLevelAlert + 8;
+    w.backgroundColor = UIColor.clearColor;
+    w.hidden = NO;
+
+    UIView *card = [[UIView alloc] initWithFrame:w.bounds];
+    card.backgroundColor = [UIColor colorWithWhite:0.07 alpha:0.97];
+    card.layer.cornerRadius = 16;
+    card.clipsToBounds = YES;
+    [w addSubview:card];
+
+    CGFloat y = 14;
+    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(16, y, 180, 22)];
+    title.text = @"福袋助手";
+    title.textColor = UIColor.whiteColor;
+    title.font = [UIFont boldSystemFontOfSize:17];
+    [card addSubview:title];
+
+    UIButton *close = [UIButton buttonWithType:UIButtonTypeSystem];
+    close.frame = CGRectMake(216, y, 48, 22);
+    [close setTitle:@"完成" forState:UIControlStateNormal];
+    [close setTitleColor:[UIColor colorWithRed:0.30 green:0.75 blue:1.0 alpha:1.0] forState:UIControlStateNormal];
+    [close addTarget:self action:@selector(togglePanel) forControlEvents:UIControlEventTouchUpInside];
+    [card addSubview:close];
+    y += 36;
+
+    UILabel *st = [[UILabel alloc] initWithFrame:CGRectMake(16, y, 248, 18)];
+    st.textColor = [UIColor colorWithWhite:1 alpha:0.7];
+    st.font = [UIFont systemFontOfSize:12];
+    [card addSubview:st];
+    self->_statusLabel = st;
+    y += 26;
+
+    [self addSwitchRowTo:card y:&y label:@"总开关（抢福袋）" on:FDEnabled() action:@selector(enabledChanged:)];
+    [self addSwitchRowTo:card y:&y label:@"调试日志" on:[NSUserDefaults.standardUserDefaults boolForKey:FDDebugKey] action:@selector(debugChanged:)];
+    _delayField     = [self addNumberRowTo:card y:&y label:@"延迟触发(分)" value:FDNumber(FDDelayKey, 0)];
+    _cooldownField  = [self addNumberRowTo:card y:&y label:@"冷却时间(秒)" value:FDNumber(FDCooldownKey, 20)];
+    _limitField     = [self addNumberRowTo:card y:&y label:@"每日上限(0不限)" value:FDNumber(FDDailyLimitKey, 30)];
+
+    y += 4;
+    UILabel *tip = [[UILabel alloc] initWithFrame:CGRectMake(16, y, 248, 40)];
+    tip.text = @"开启后进入直播间会自动监测福袋；\n配置修改即时保存。";
+    tip.textColor = [UIColor colorWithWhite:1 alpha:0.45];
+    tip.font = [UIFont systemFontOfSize:11];
+    tip.numberOfLines = 0;
+    [card addSubview:tip];
+
+    self->_panelWindow = w;
+    [self refreshUI];
+}
+
+- (void)addSwitchRowTo:(UIView *)card y:(CGFloat *)y label:(NSString *)label on:(BOOL)on action:(SEL)action {
+    UILabel *l = [[UILabel alloc] initWithFrame:CGRectMake(16, *y + 3, 180, 30)];
+    l.text = label;
+    l.textColor = UIColor.whiteColor;
+    l.font = [UIFont systemFontOfSize:14];
+    [card addSubview:l];
+    UISwitch *sw = [[UISwitch alloc] initWithFrame:CGRectMake(196, *y, 51, 31)];
+    sw.on = on;
+    sw.onTintColor = [UIColor colorWithRed:0.20 green:0.72 blue:0.40 alpha:1.0];
+    [sw addTarget:self action:action forControlEvents:UIControlEventValueChanged];
+    [card addSubview:sw];
+    *y += 44;
+}
+
+- (UITextField *)addNumberRowTo:(UIView *)card y:(CGFloat *)y label:(NSString *)label value:(double)v {
+    UILabel *l = [[UILabel alloc] initWithFrame:CGRectMake(16, *y + 8, 130, 26)];
+    l.text = label;
+    l.textColor = UIColor.whiteColor;
+    l.font = [UIFont systemFontOfSize:13];
+    [card addSubview:l];
+    UITextField *f = [[UITextField alloc] initWithFrame:CGRectMake(170, *y, 80, 32)];
+    f.text = [NSString stringWithFormat:@"%g", v];
+    f.textColor = UIColor.whiteColor;
+    f.keyboardType = UIKeyboardTypeNumbersAndPunctuation;
+    f.borderStyle = UITextBorderStyleRoundedRect;
+    f.backgroundColor = [UIColor colorWithWhite:1 alpha:0.14];
+    f.textAlignment = NSTextAlignmentCenter;
+    f.font = [UIFont systemFontOfSize:14];
+    [f addTarget:self action:@selector(fieldChanged:) forControlEvents:UIControlEventEditingDidEnd];
+    [card addSubview:f];
+    *y += 44;
+    return f;
+}
+
+- (void)fieldChanged:(UITextField *)f { [self saveFields]; }
+
+- (void)saveFields {
+    NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
+    if (_delayField.text.length)    [d setDouble:[_delayField.text doubleValue] forKey:FDDelayKey];
+    if (_cooldownField.text.length) [d setDouble:[_cooldownField.text doubleValue] forKey:FDCooldownKey];
+    if (_limitField.text.length)    [d setDouble:[_limitField.text doubleValue] forKey:FDDailyLimitKey];
+}
+
+- (void)enabledChanged:(UISwitch *)sw {
+    [NSUserDefaults.standardUserDefaults setBool:sw.on forKey:FDEnabledKey];
+    if (sw.on) [[FDCoordinator shared] start]; else [[FDCoordinator shared] stop];
+    [self refreshUI];
+}
+
+- (void)debugChanged:(UISwitch *)sw {
+    [NSUserDefaults.standardUserDefaults setBool:sw.on forKey:FDDebugKey];
+}
+
+- (void)refreshUI {
+    BOOL on = FDEnabled();
+    [_button setTitle:(on ? @"福袋 · 开" : @"福袋 · 关") forState:UIControlStateNormal];
+    if (_statusLabel) {
+        _statusLabel.text = on
+            ? [NSString stringWithFormat:@"运行中 · 今日已触发 %ld 次", (long)[[FDCoordinator shared] dailyCount]]
+            : @"已暂停";
+    }
 }
 
 - (void)updateStatus:(NSString *)status {
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (self->_button) [self->_button setTitle:status forState:UIControlStateNormal];
+        if (self->_statusLabel) self->_statusLabel.text = [NSString stringWithFormat:@"%@", status];
+        [self->_button setTitle:status forState:UIControlStateNormal];
     });
 }
 
