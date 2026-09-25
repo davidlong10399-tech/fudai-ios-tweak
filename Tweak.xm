@@ -2,6 +2,7 @@
 #include <Foundation/Foundation.h>
 #include <QuartzCore/QuartzCore.h>
 #include <stdarg.h>
+#import <objc/runtime.h>
 
 @interface FDFloatingController : NSObject
 + (instancetype)shared;
@@ -266,6 +267,46 @@ static void FDLog(NSString *format, ...) {
 // 不再因为签名不匹配导致 %orig 传错参数而崩溃。
 static BOOL gCompTapped, gCompOpen2, gCompOpen3, gDataFetch2, gDataFetch3, gLuckyCat;
 
+// 调试：把运行时加载的类中，名字含红包/福袋关键词的类及其全部方法名写入
+// <App>/Documents/fudai_dump.txt，用于确认当前抖音版本的真实类名/selector。
+static void FDDumpRuntimeInfo(void) {
+    @autoreleasepool {
+        NSArray *keywords = @[@"RedPacket", @"redPacket", @"LuckyBag", @"luckyBag",
+                              @"HongBao", @"hongbao", @"Packet", @"Lucky", @"Bag"];
+        unsigned int count = 0;
+        Class *classes = objc_copyClassList(&count);
+        NSMutableString *out = [NSMutableString string];
+        [out appendFormat:@"totalClasses=%u\n", count];
+        [out appendFormat:@"targetClass AWEIMDouyinRedPacketComponent = %@\n",
+            NSClassFromString(@"AWEIMDouyinRedPacketComponent") ? @"FOUND" : @"MISSING"];
+        [out appendFormat:@"targetClass AWEIMDouyinRedPacketDataManager = %@\n",
+            NSClassFromString(@"AWEIMDouyinRedPacketDataManager") ? @"FOUND" : @"MISSING"];
+        [out appendFormat:@"targetClass AWELuckyCatBannerView = %@\n",
+            NSClassFromString(@"AWELuckyCatBannerView") ? @"FOUND" : @"MISSING"];
+        for (unsigned int i = 0; i < count; i++) {
+            NSString *name = NSStringFromClass(classes[i]);
+            BOOL hit = NO;
+            for (NSString *kw in keywords) {
+                if ([name containsString:kw]) { hit = YES; break; }
+            }
+            if (!hit) continue;
+            [out appendFormat:@"\n=== %@ ===\n", name];
+            unsigned int mcount = 0;
+            Method *methods = class_copyMethodList(classes[i], &mcount);
+            for (unsigned int j = 0; j < mcount; j++) {
+                [out appendFormat:@"  %s\n", sel_getName(method_getName(methods[j]))];
+            }
+            free(methods);
+        }
+        free(classes);
+        NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+        NSString *file = [paths.firstObject stringByAppendingPathComponent:@"fudai_dump.txt"];
+        NSError *err = nil;
+        BOOL ok = [out writeToFile:file atomically:YES encoding:NSUTF8StringEncoding error:&err];
+        NSLog(@"[FuDai] runtime dump %@ -> %@ (%lu bytes)", ok ? @"OK" : err, file, (unsigned long)out.length);
+    }
+}
+
 static void FDInitHooks(void) {
     Class comp = NSClassFromString(@"AWEIMDouyinRedPacketComponent");
     if (!gCompTapped && comp && [comp instancesRespondToSelector:@selector(redPacketDidTapped)]) {
@@ -321,6 +362,12 @@ static void FDInitHooks(void) {
             for (int i = 1; i <= 6; i++) {
                 dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(i * 10 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                     FDInitHooks();
+                });
+            }
+            // 调试模式：启动 20 秒后 dump 一次运行时类信息（等懒加载框架就绪）
+            if ([NSUserDefaults.standardUserDefaults boolForKey:FDDebugKey]) {
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 20 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+                    FDDumpRuntimeInfo();
                 });
             }
         }];
