@@ -766,6 +766,30 @@ static void FDInitHooks(void) {
     }
 }
 
+// 无条件写启动标记：不依赖 syslog 就能确认注入成功、偏好读取值和 hook 安装情况
+static void FDWriteBootMarker(void) {
+    @autoreleasepool {
+        NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
+        NSMutableString *out = [NSMutableString string];
+        [out appendFormat:@"boot=%@\n", [NSDate date]];
+        [out appendFormat:@"bundle=%@\n", NSBundle.mainBundle.bundleIdentifier ?: @"(nil)"];
+        [out appendFormat:@"enabled=%@ debug=%@\n",
+            [d objectForKey:FDEnabledKey] ?: @"<unset:default-NO>",
+            [d objectForKey:FDDebugKey] ?: @"<unset:default-NO>"];
+        [out appendFormat:@"keywords=%@\n", [d stringForKey:FDKeywordKey] ?: @"<unset>"];
+        [out appendFormat:@"hooks compTapped=%d open2=%d open3=%d fetch2=%d fetch3=%d lucky=%d\n",
+            gCompTapped, gCompOpen2, gCompOpen3, gDataFetch2, gDataFetch3, gLuckyCat];
+        [out appendFormat:@"classes comp=%@ dm=%@ lucky=%@\n",
+            NSClassFromString(@"AWEIMDouyinRedPacketComponent") ? @"FOUND" : @"MISSING",
+            NSClassFromString(@"AWEIMDouyinRedPacketDataManager") ? @"FOUND" : @"MISSING",
+            NSClassFromString(@"AWELuckyCatBannerView") ? @"FOUND" : @"MISSING"];
+        NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+        NSString *file = [paths.firstObject stringByAppendingPathComponent:@"fudai_boot.txt"];
+        [out writeToFile:file atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        NSLog(@"[FuDai] boot marker -> %@", file);
+    }
+}
+
 %ctor {
     @autoreleasepool {
         [NSUserDefaults.standardUserDefaults registerDefaults:@{
@@ -785,6 +809,8 @@ static void FDInitHooks(void) {
                                                            queue:[NSOperationQueue mainQueue]
                                                       usingBlock:^(NSNotification *note) {
             [[FDFloatingController shared] install];
+            FDInitHooks();
+            FDWriteBootMarker();
             if (FDEnabled()) [[FDCoordinator shared] start];
             for (int i = 1; i <= 6; i++) {
                 dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(i * 10 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{

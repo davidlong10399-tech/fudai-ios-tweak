@@ -1,10 +1,10 @@
 Package: com.fudai.ios
 Name: FuDai iOS
-Version: 0.4.0
+Version: 0.4.1
 Architecture: iphoneos-arm64e
 Description: Douyin lucky-bag helper (auto grab engine)
 Maintainer: local
 Author: local
 Section: Tweaks
 Priority: optional
-Depends: mobilesubstrate | org.coolstar.libhooker | ellekit
+Depends: firmware (>= 14.0)
