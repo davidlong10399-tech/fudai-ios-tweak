@@ -532,7 +532,7 @@ static void FDDumpRuntimeInfo(void);
 
 - (void)generateDiagnostics:(UIButton *)sender {
     sender.enabled = NO;
-    [FDDumpRuntimeInfo];
+    FDDumpRuntimeInfo();
     sender.enabled = YES;
     if (self->_statusLabel) {
         self->_statusLabel.text = @"已写入 Documents/fudai_dump.txt";
