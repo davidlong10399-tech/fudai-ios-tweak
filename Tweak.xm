@@ -83,6 +83,31 @@ static void FDLog(NSString *format, ...) {
     NSString *message = [[NSString alloc] initWithFormat:format arguments:args];
     va_end(args);
     NSLog(@"[FuDai] %@", message);
+    // 落盘到 Documents/fudai_log.txt，便于 SSH 拉取诊断
+    @try {
+        static NSDateFormatter *fmt = nil;
+        static dispatch_once_t once;
+        dispatch_once(&once, ^{
+            fmt = [NSDateFormatter new];
+            fmt.dateFormat = @"HH:mm:ss";
+        });
+        NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+        NSString *file = [paths.firstObject stringByAppendingPathComponent:@"fudai_log.txt"];
+        NSFileManager *fm = [NSFileManager defaultManager];
+        NSDictionary *attrs = [fm attributesOfItemAtPath:file error:nil];
+        if (attrs && [attrs fileSize] > 200000) [fm removeItemAtPath:file error:nil];
+        NSString *line = [NSString stringWithFormat:@"%@ %@\n", [fmt stringFromDate:[NSDate date]], message];
+        NSFileHandle *fh = [NSFileHandle fileHandleForWritingAtPath:file];
+        if (!fh) {
+            [line writeToFile:file atomically:YES encoding:NSUTF8StringEncoding error:nil];
+            return;
+        }
+        [fh seekToEndOfFile];
+        [fh writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
+        [fh closeFile];
+    } @catch (NSException *e) {
+        // 日志失败不影响主流程
+    }
 }
 
 static NSInteger FDRand(NSInteger min, NSInteger max) {
@@ -467,6 +492,8 @@ typedef NS_ENUM(NSInteger, FDCommentStep) {
     BOOL inRoom = ([cls rangeOfString:@"Live" options:NSCaseInsensitiveSearch].location != NSNotFound);
     BOOL inFeed = (!inRoom && [cls rangeOfString:@"Feed" options:NSCaseInsensitiveSearch].location != NSNotFound);
     FDEngine engine = inRoom ? FDEngineRoom : (inFeed ? FDEngineFeed : FDEngineUnknown);
+    static NSInteger sPollTick = 0;
+    if (++sPollTick % 30 == 1) FDLog(@"poll: top=%@ engine=%ld", cls, (long)engine);
 
     if (engine != self->_engine) {
         FDLog(@"engine -> %@ (top=%@)", inRoom ? @"Room" : (inFeed ? @"Feed" : @"?"), cls);
@@ -539,7 +566,7 @@ typedef NS_ENUM(NSInteger, FDCommentStep) {
             return;
         }
         // 互动完毕且到点 → 滚下一个
-        [self scrollFeedNextWith:pass.feedScroll];
+        [self scrollFeedNext];
         self->_engagedCurrentVideo = NO;
         self->_pendingScroll = nil;
         self->_nextBrowseAct = [now dateByAddingTimeInterval:FDRand((NSInteger)FDNum(FDWatchMinKey, 1), (NSInteger)FDNum(FDWatchMaxKey, 5))];
@@ -547,7 +574,7 @@ typedef NS_ENUM(NSInteger, FDCommentStep) {
         return;
     }
     if (scrollDue) {
-        [self scrollFeedNextWith:pass.feedScroll];
+        [self scrollFeedNext];
         self->_pendingScroll = nil;
     }
 }
@@ -584,9 +611,37 @@ typedef NS_ENUM(NSInteger, FDCommentStep) {
     }
 }
 
-- (void)scrollFeedNextWith:(UIScrollView *)sv {
-    if (!sv) { FDLog(@"feed: paging scroll not found"); return; }
+- (void)scrollFeedNext {
+    UIScrollView *sv = [self feedScrollViewInTopVC];
+    if (!sv) {
+        FDLog(@"feed: no scroll view inside topVC %@", NSStringFromClass([FDTopVC() class]));
+        return;
+    }
     [self advanceFeedStep:0 sv:sv];
+}
+
+// 只在推荐页 VC 自己的视图子树里找滚动容器（TableView/CollectionView 都认），避免猜错
+- (UIScrollView *)feedScrollViewInTopVC {
+    UIViewController *top = FDTopVC();
+    if (!top || !top.viewIfLoaded) return nil;
+    CGSize screen = UIScreen.mainScreen.bounds.size;
+    NSMutableArray *stack = [NSMutableArray arrayWithObject:top.view];
+    NSInteger budget = 600;
+    while (stack.count > 0 && budget > 0) {
+        UIView *v = stack.lastObject;
+        [stack removeLastObject];
+        budget--;
+        if ([v isKindOfClass:UIScrollView.class]) {
+            UIScrollView *sv = (UIScrollView *)v;
+            if (!sv.hidden && sv.alpha > 0.3 &&
+                sv.bounds.size.height > screen.height * 0.7 &&
+                sv.bounds.size.width > screen.width * 0.7) {
+                return sv;
+            }
+        }
+        for (UIView *sub in [v.subviews reverseObjectEnumerator]) [stack addObject:sub];
+    }
+    return nil;
 }
 
 // 带验证的切视频：每条路径调用后 0.9s 检查 contentOffset 是否真的移动，没动自动降级
@@ -594,9 +649,21 @@ typedef NS_ENUM(NSInteger, FDCommentStep) {
     CGPoint before = sv.contentOffset;
     switch (step) {
         case 0: {
-            // 路径1：抖音优化同款 scrollToNextVideo
-            if ([self callScrollToNextVideoFrom:FDTopVC()]) {
-                [self verifyAdvance:step sv:sv from:before];
+            // 路径1：抖音优化同款 scrollToNextVideo（连续失败3次后跳过，避免每轮浪费0.9s）
+            static NSInteger s2nFails = 0;
+            if (s2nFails < 3 && [self callScrollToNextVideoFrom:FDTopVC()]) {
+                __block NSInteger *fails = &s2nFails;
+                __weak typeof(self) ws = self;
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.9 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                    if (!ws) return;
+                    if (fabs(sv.contentOffset.y - before.y) > 60) {
+                        FDLog(@"feed: advanced via scrollToNextVideo");
+                    } else {
+                        (*fails)++;
+                        FDLog(@"feed: scrollToNextVideo no-op (%d/3), fallback", *fails);
+                        [ws advanceFeedStep:1 sv:sv];
+                    }
+                });
                 return;
             }
             [self advanceFeedStep:1 sv:sv];
@@ -622,26 +689,34 @@ typedef NS_ENUM(NSInteger, FDCommentStep) {
             return;
         }
         case 2: {
-            // 路径3：UICollectionView scrollToItem + 手动补发滚动结束回调（触发播放器切换）
-            if ([sv isKindOfClass:UICollectionView.class]) {
-                UICollectionView *cv = (UICollectionView *)sv;
-                @try {
+            // 路径3：Table/Collection 自己的滚动 API + 手动补发滚动结束回调
+            NSIndexPath *targetIp = nil;
+            @try {
+                if ([sv isKindOfClass:UITableView.class]) {
+                    UITableView *tv = (UITableView *)sv;
+                    CGFloat rh = MAX(sv.bounds.size.height, 1);
+                    NSInteger page = (NSInteger)round(sv.contentOffset.y / rh);
+                    NSInteger n = [tv numberOfRowsInSection:0];
+                    if (page + 1 < n) targetIp = [NSIndexPath indexPathForRow:page + 1 inSection:0];
+                    if (targetIp) [tv scrollToRowAtIndexPath:targetIp atScrollPosition:UITableViewScrollPositionTop animated:YES];
+                } else if ([sv isKindOfClass:UICollectionView.class]) {
+                    UICollectionView *cv = (UICollectionView *)sv;
                     NSInteger page = (NSInteger)round(sv.contentOffset.y / MAX(sv.bounds.size.height, 1));
                     NSInteger n = [cv numberOfItemsInSection:0];
-                    NSInteger target = page + 1;
-                    if (target < n) {
-                        NSIndexPath *ip = [NSIndexPath indexPathForItem:target inSection:0];
-                        [cv scrollToItemAtIndexPath:ip atScrollPosition:UICollectionViewScrollPositionTop animated:YES];
-                        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.55 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                            [self fireScrollEndFor:sv];
-                        });
-                        [self verifyAdvance:step sv:sv from:before];
-                        return;
-                    }
-                } @catch (NSException *e) {
-                    FDLog(@"feed: scrollToItem exception %@", e);
+                    if (page + 1 < n) targetIp = [NSIndexPath indexPathForItem:page + 1 inSection:0];
+                    if (targetIp) [cv scrollToItemAtIndexPath:targetIp atScrollPosition:UICollectionViewScrollPositionTop animated:YES];
                 }
+            } @catch (NSException *e) {
+                FDLog(@"feed: scrollToRow/Item exception %@", e);
             }
+            if (targetIp) {
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.55 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                    [self fireScrollEndFor:sv];
+                });
+                [self verifyAdvance:step sv:sv from:before];
+                return;
+            }
+            FDLog(@"feed: no row/item to scroll (page+1 out of range)");
             [self advanceFeedStep:3 sv:sv];
             return;
         }
