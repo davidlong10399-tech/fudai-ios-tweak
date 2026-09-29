@@ -587,7 +587,10 @@ typedef NS_ENUM(NSInteger, FDCommentStep) {
 - (void)scrollFeedNextWith:(UIScrollView *)sv {
     if (!sv) { FDLog(@"feed: paging scroll not found"); return; }
 
-    // 1) 优先调抖音自己的"下一个视频"方法（播放器切换由 App 自己处理，黑屏根因是强滚不触发播放器切换）
+    // 1) 官方路径：scrollToNextVideo（抖音优化自动播放实测可用的方法名）
+    if ([self callScrollToNextVideoFrom:FDTopVC()]) return;
+
+    // 2) 运行时发现的 next 选择器
     UIViewController *top = FDTopVC();
     SEL nextSel = [self nextVideoSelectorForTopVC:top];
     if (nextSel) {
@@ -603,7 +606,7 @@ typedef NS_ENUM(NSInteger, FDCommentStep) {
         }
     }
 
-    // 2) UICollectionView 自己的滚动 API（走正规回调链）
+    // 3) UICollectionView 自己的滚动 API（走正规回调链）
     if ([sv isKindOfClass:UICollectionView.class]) {
         UICollectionView *cv = (UICollectionView *)sv;
         @try {
@@ -621,22 +624,52 @@ typedef NS_ENUM(NSInteger, FDCommentStep) {
         }
     }
 
-    // 3) 兜底：直接强滚（可能黑屏，仅保底）
+    // 4) 兜底：直接强滚（可能黑屏，仅保底）
     CGPoint off = sv.contentOffset;
     off.y += sv.bounds.size.height;
     [sv setContentOffset:off animated:YES];
     FDLog(@"feed: fallback scrolled to y=%.0f", off.y);
 }
 
+// 抖音优化同款：从推荐页 VC 及其分页管理器上调用 scrollToNextVideo
+- (BOOL)callScrollToNextVideoFrom:(UIViewController *)top {
+    if (!top) return NO;
+    SEL sel = NSSelectorFromString(@"scrollToNextVideo");
+    NSMutableArray *candidates = [NSMutableArray arrayWithObject:top];
+    for (NSString *key in @[@"pagingManager", @"detailPagingManager", @"feedPagingManager", @"viewModel", @"feedViewModel"]) {
+        @try {
+            id v = [top valueForKey:key];
+            if (v) [candidates addObject:v];
+        } @catch (NSException *e) {
+            // KVC 键不存在，跳过
+        }
+    }
+    for (id c in candidates) {
+        if ([c respondsToSelector:sel]) {
+            @try {
+                #pragma clang diagnostic push
+                #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+                [c performSelector:sel];
+                #pragma clang diagnostic pop
+                FDLog(@"feed: scrollToNextVideo on %@", NSStringFromClass([c class]));
+                return YES;
+            } @catch (NSException *e) {
+                FDLog(@"scrollToNextVideo exception %@", e);
+            }
+        }
+    }
+    return NO;
+}
+
 // 在推荐页 VC（及其父类）里找"下一个视频"方法，找到后按类名缓存
 - (SEL)nextVideoSelectorForTopVC:(UIViewController *)top {
-    static NSMutableDictionary<NSString *, NSValue *> *cache = nil;
+    static NSMutableDictionary<NSString *, NSString *> *cache = nil;
     static dispatch_once_t once;
     dispatch_once(&once, ^{ cache = [NSMutableDictionary dictionary]; });
     if (!top) return NULL;
     NSString *clsName = NSStringFromClass([top class]);
-    NSValue *cached = cache[clsName];
-    if (cached) return cached.selectorValue;
+    NSString *cached = cache[clsName];
+    if (cached) return NSSelectorFromString(cached);
 
     SEL found = NULL;
     Class cls = [top class];
@@ -659,7 +692,7 @@ typedef NS_ENUM(NSInteger, FDCommentStep) {
         cls = class_getSuperclass(cls);
     }
     if (found) {
-        cache[clsName] = [NSValue valueWithPointer:found];
+        cache[clsName] = NSStringFromSelector(found);
         FDLog(@"feed: next-video selector found: %@", NSStringFromSelector(found));
     } else {
         FDLog(@"feed: no next-video selector on %@", clsName);
