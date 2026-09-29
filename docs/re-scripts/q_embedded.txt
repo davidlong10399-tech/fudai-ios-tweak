@@ -1,0 +1,33 @@
+==== KEY SELECTORS ====
+scrollToNextVideo                                       selrefs=0
+YYYisEnableAutoPlay                                     selrefs=0
+consumeNextTap                                          selrefs=1
+setConsumeNextTap:                                      selrefs=1
+setNextSlideDistance:                                   selrefs=1
+swipeToNextStory                                        selrefs=1
+scrollViewWillEndDragging:withVelocity:targetContentOffset: selrefs=1
+---- consumeNextTap
+---- setConsumeNextTap:
+---- setNextSlideDistance:
+---- swipeToNextStory
+---- scrollViewWillEndDragging:withVelocity:targetContentOffset:
+==== AUTOPLAY-ISH SELECTORS (referenced) ====
+   applyFeedSmoothSwipeBackgroundImage:                                   selrefs=1 refs=0
+   configureFeedSmoothSwipeBackground                                     selrefs=1 refs=0
+   configureFeedSmoothSwipeBackgroundColor                                selrefs=1 refs=0
+   configureFeedSmoothSwipeSpeed                                          selrefs=1 refs=0
+   configureSideDockWakeSlideHoverSound                                   selrefs=1 refs=0
+   enableUserProfilePostAutoPlay                                          selrefs=1 refs=0
+   getFeedIphoneAutoPlayState                                             selrefs=1 refs=0
+   hasIphoneAutoPlaySwitch                                                selrefs=1 refs=0
+   isAutoPlayOpen                                                         selrefs=1 refs=0
+   openFeedSmoothSwipeSettingsPage                                        selrefs=1 refs=0
+   performSideDockWakeSlideActionID:sourceView:                           selrefs=1 refs=0
+   pickFeedSmoothSwipeBackgroundImage                                     selrefs=1 refs=0
+   pickSideDockWakeSlideHoverSoundFromFile                                selrefs=1 refs=0
+   progressSlideSwipeToNextStory                                          selrefs=1 refs=0
+   promptFeedSmoothSwipeCustomSpeed                                       selrefs=1 refs=0
+   setIsAutoPlay:                                                         selrefs=1 refs=0
+   setNextSlideDistance:                                                  selrefs=1 refs=0
+   swipeToNextStory                                                       selrefs=1 refs=0
+==== HOOK INSTALLERS (call method_setImplementation / class_addMethod) ====

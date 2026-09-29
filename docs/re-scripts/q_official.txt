@@ -1,0 +1,613 @@
+==== KEY SELECTORS ====
+scrollToNextVideo                                       selrefs=0
+YYYisEnableAutoPlay                                     selrefs=0
+consumeNextTap                                          selrefs=1
+setConsumeNextTap:                                      selrefs=1
+setNextSlideDistance:                                   selrefs=1
+swipeToNextStory                                        selrefs=1
+scrollViewWillEndDragging:withVelocity:targetContentOffset: selrefs=1
+---- consumeNextTap
+   call(stub)@0x3aad9c in [0x3aad2c] SJJHiFloatingButton -sjj_touchUp:
+---- setConsumeNextTap:
+   call(stub)@0x3aa498 in [0x3aa45c] SJJHiFloatingButton -restoreFromEdgeHidden
+   call(stub)@0x3aada8 in [0x3aad2c] SJJHiFloatingButton -sjj_touchUp:
+   call(stub)@0x3ab1a4 in [0x3ab0d8] SJJHiFloatingButton -sjj_handlePan:
+---- setNextSlideDistance:
+---- swipeToNextStory
+---- scrollViewWillEndDragging:withVelocity:targetContentOffset:
+==== AUTOPLAY-ISH SELECTORS (referenced) ====
+   applyFeedSmoothSwipeBackgroundImage:                                   selrefs=1 refs=0
+   configureFeedSmoothSwipeBackground                                     selrefs=1 refs=0
+   configureFeedSmoothSwipeBackgroundColor                                selrefs=1 refs=0
+   configureFeedSmoothSwipeSpeed                                          selrefs=1 refs=0
+   configureSideDockWakeSlideHoverSound                                   selrefs=1 refs=0
+   enableUserProfilePostAutoPlay                                          selrefs=1 refs=0
+   getFeedIphoneAutoPlayState                                             selrefs=1 refs=0
+   hasIphoneAutoPlaySwitch                                                selrefs=1 refs=0
+   isAutoPlayOpen                                                         selrefs=1 refs=0
+   openFeedSmoothSwipeSettingsPage                                        selrefs=1 refs=0
+   performSideDockWakeSlideActionID:sourceView:                           selrefs=1 refs=0
+   pickFeedSmoothSwipeBackgroundImage                                     selrefs=1 refs=0
+   pickSideDockWakeSlideHoverSoundFromFile                                selrefs=1 refs=0
+   progressSlideSwipeToNextStory                                          selrefs=1 refs=0
+   promptFeedSmoothSwipeCustomSpeed                                       selrefs=1 refs=0
+   setIsAutoPlay:                                                         selrefs=1 refs=0
+   setNextSlideDistance:                                                  selrefs=1 refs=0
+   swipeToNextStory                                                       selrefs=1 refs=0
+==== HOOK INSTALLERS (call method_setImplementation / class_addMethod) ====
+[0x79b28] sub_0x79b28
+    api: NSClassFromString,_Unwind_Resume,__stack_chk_fail,objc_enumerationMutation,objc_getClass,objc_opt_isKindOfClass,objc_release,objc_retain,objc_retainAutoreleasedReturnValue,objc_storeWeak
+    classes: 
+    sels(0): 
+[0x145680] sub_0x145680
+    api: NSClassFromString,_Unwind_Resume,__stack_chk_fail,class_addMethod,objc_begin_catch,objc_end_catch,objc_enumerationMutation,objc_getClass,objc_opt_class,objc_opt_isKindOfClass,objc_release,objc_retainAutoreleasedReturnValue,object_getClass
+    classes: 
+    sels(0): 
+[0x153640] sub_0x153640
+    api: NSSelectorFromString,NSStringFromClass,_Unwind_Resume,class_getClassMethod,class_getInstanceMethod,free,method_copyReturnType,method_getImplementation,objc_autoreleaseReturnValue,objc_begin_catch,objc_end_catch,objc_release,objc_retain,objc_retainAutoreleasedReturnValue,object_getClass,object_isClass
+    classes: 
+    sels(0): 
+[0x183524] sub_0x183524
+    api: NSSelectorFromString,_Unwind_Resume,class_getInstanceMethod,method_getTypeEncoding,objc_autoreleaseReturnValue,objc_begin_catch,objc_end_catch,objc_msgSend,objc_release,objc_retain,objc_retainAutoreleasedReturnValue,object_getClass
+    classes: 
+    sels(0): 
+[0x1e986c] sub_0x1e986c
+    api: NSSelectorFromString,_Unwind_Resume,__stack_chk_fail,objc_begin_catch,objc_end_catch,objc_enumerationMutation,objc_getClass,objc_msgSend,objc_opt_respondsToSelector,objc_release,objc_retain,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x1e9f14] sub_0x1e9f14
+    api: _Unwind_Resume,__stack_chk_fail,class_getClassMethod,class_getInstanceMethod,class_isMetaClass,free,method_copyArgumentType,method_getNumberOfArguments,method_getReturnType,objc_begin_catch,objc_end_catch,objc_msgSend,objc_opt_class,objc_release,objc_retain,objc_retainAutoreleasedReturnValue,object_getClass
+    classes: 
+    sels(0): 
+[0x247b48] sub_0x247b48
+    api: _Unwind_Resume,__stack_chk_fail,objc_enumerationMutation,objc_getClass,objc_opt_isKindOfClass,objc_release,objc_retainAutorelease,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x2a6b5c] sub_0x2a6b5c
+    api: NSSelectorFromString,_Unwind_Resume,__stack_chk_fail,class_getInstanceMethod,free,method_copyReturnType,objc_begin_catch,objc_end_catch,objc_enumerationMutation,objc_msgSend,objc_opt_class,objc_opt_isKindOfClass,objc_opt_respondsToSelector,objc_release,objc_retain,objc_retainAutoreleasedReturnValue,object_getClass
+    classes: 
+    sels(0): 
+[0x2ab45c] sub_0x2ab45c
+    api: _Unwind_Resume,objc_alloc_init,objc_autoreleaseReturnValue,objc_getClass,objc_release,objc_retain,objc_retainAutorelease,objc_retainAutoreleasedReturnValue,objc_retainBlock
+    classes: 
+    sels(0): 
+[0x2ac1ec] sub_0x2ac1ec
+    api: _Unwind_Resume,objc_alloc_init,objc_autoreleaseReturnValue,objc_getClass,objc_release,objc_retain,objc_retainAutorelease
+    classes: 
+    sels(0): 
+[0x2ad664] sub_0x2ad664
+    api: _Unwind_Resume,dispatch_async,objc_alloc_init,objc_autoreleaseReturnValue,objc_getClass,objc_opt_class,objc_opt_isKindOfClass,objc_release,objc_retain,objc_retainAutorelease,objc_setAssociatedObject
+    classes: 
+    sels(0): 
+[0x2e8f00] sub_0x2e8f00
+    api: class_addMethod,class_getInstanceMethod,method_getImplementation,method_getTypeEncoding,method_setImplementation
+    classes: 
+    sels(0): 
+[0x2e93d8] sub_0x2e93d8
+    api: objc_getClass
+    classes: 
+    sels(0): 
+[0x2eb114] sub_0x2eb114
+    api: objc_getClass,object_getClass
+    classes: 
+    sels(0): 
+[0x2f1b78] sub_0x2f1b78
+    api: objc_getClass,object_getClass
+    classes: 
+    sels(0): 
+[0x2f56e0] sub_0x2f56e0
+    api: objc_getClass,object_getClass
+    classes: 
+    sels(0): 
+[0x2f6cd4] sub_0x2f6cd4
+    api: objc_getClass
+    classes: 
+    sels(0): 
+[0x2f9ce4] sub_0x2f9ce4
+    api: objc_getClass
+    classes: 
+    sels(0): 
+[0x3060fc] sub_0x3060fc
+    api: objc_getClass
+    classes: 
+    sels(0): 
+[0x308910] sub_0x308910
+    api: NSSelectorFromString,_Unwind_Resume,__stack_chk_fail,class_getClassMethod,class_getInstanceMethod,class_getInstanceVariable,objc_enumerationMutation,objc_msgSend,objc_release,objc_retain,objc_retainAutorelease,objc_retainAutoreleasedReturnValue,object_getClass
+    classes: 
+    sels(0): 
+[0x323204] sub_0x323204
+    api: objc_getClass
+    classes: 
+    sels(0): 
+[0x332f78] sub_0x332f78
+    api: objc_getClass
+    classes: 
+    sels(0): 
+[0x33e728] sub_0x33e728
+    api: objc_getClass
+    classes: 
+    sels(0): 
+[0x36fca4] sub_0x36fca4
+    api: objc_getClass
+    classes: 
+    sels(0): 
+[0x3a6ba4] sub_0x3a6ba4
+    api: objc_getClass
+    classes: 
+    sels(0): 
+[0x3aeaa8] sub_0x3aeaa8
+    api: objc_getClass
+    classes: 
+    sels(0): 
+[0x3aebcc] sub_0x3aebcc
+    api: class_getInstanceMethod,objc_getClass,objc_opt_class,objc_retainAutorelease
+    classes: 
+    sels(0): 
+[0x3aec7c] sub_0x3aec7c
+    api: class_getInstanceMethod,objc_getClass,objc_opt_class,objc_retainAutorelease
+    classes: 
+    sels(0): 
+[0x3aed2c] sub_0x3aed2c
+    api: class_getInstanceMethod,objc_getClass,objc_opt_class,objc_retainAutorelease
+    classes: 
+    sels(0): 
+[0x3aeddc] sub_0x3aeddc
+    api: class_getInstanceMethod,objc_getClass,objc_opt_class,objc_retainAutorelease
+    classes: 
+    sels(0): 
+[0x3aee8c] sub_0x3aee8c
+    api: class_getInstanceMethod,objc_getClass,objc_opt_class,objc_retainAutorelease
+    classes: 
+    sels(0): 
+[0x3aef3c] sub_0x3aef3c
+    api: class_getInstanceMethod,objc_getClass,objc_opt_class,objc_retainAutorelease
+    classes: 
+    sels(0): 
+[0x3af168] sub_0x3af168
+    api: class_getInstanceMethod
+    classes: 
+    sels(0): 
+[0x3be974] sub_0x3be974
+    api: class_getInstanceMethod,method_setImplementation
+    classes: 
+    sels(0): 
+[0x3c1978] sub_0x3c1978
+    api: NSClassFromString,class_getInstanceMethod,dispatch_after,dispatch_time,method_setImplementation
+    classes: 
+    sels(0): 
+[0x3c2894] sub_0x3c2894
+    api: NSSelectorFromString,NSStringFromClass,_Unwind_Resume,class_getClassMethod,class_getInstanceMethod,free,method_copyReturnType,method_getImplementation,objc_autoreleaseReturnValue,objc_begin_catch,objc_end_catch,objc_release,objc_retain,objc_retainAutoreleasedReturnValue,object_getClass,object_isClass
+    classes: 
+    sels(0): 
+[0x3cd4e0] sub_0x3cd4e0
+    api: NSClassFromString,class_getInstanceMethod,dispatch_after,dispatch_time,method_getImplementation,method_setImplementation
+    classes: 
+    sels(0): 
+[0x455eb4] sub_0x455eb4
+    api: _Unwind_Resume,__stack_chk_fail,objc_getClass,objc_release,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x46ede0] sub_0x46ede0
+    api: dispatch_async,objc_getClass,objc_release,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x46fee0] sub_0x46fee0
+    api: NSClassFromString,class_getInstanceMethod
+    classes: 
+    sels(0): 
+[0x470028] sub_0x470028
+    api: NSClassFromString,class_getInstanceMethod
+    classes: 
+    sels(0): 
+[0x4a5874] sub_0x4a5874
+    api: _Unwind_Resume,__stack_chk_fail,objc_begin_catch,objc_end_catch,objc_enumerationMutation,objc_getClass,objc_msgSend,objc_opt_class,objc_opt_isKindOfClass,objc_opt_new,objc_opt_respondsToSelector,objc_release,objc_retain,objc_retainAutoreleasedReturnValue,objc_unsafeClaimAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x4aa838] sub_0x4aa838
+    api: class_getInstanceMethod,method_getImplementation,method_setImplementation
+    classes: 
+    sels(0): 
+[0x4ac474] sub_0x4ac474
+    api: class_getInstanceMethod,method_setImplementation
+    classes: 
+    sels(0): 
+[0x4b3088] sub_0x4b3088
+    api: class_getInstanceMethod,method_setImplementation
+    classes: 
+    sels(0): 
+[0x4b41c8] sub_0x4b41c8
+    api: objc_getClass,object_getClass
+    classes: 
+    sels(0): 
+[0x4bec10] sub_0x4bec10
+    api: NSStringFromSelector,_Unwind_Resume,class_addMethod,class_getInstanceMethod,class_getName,method_getImplementation,method_getTypeEncoding,method_setImplementation,objc_release,objc_retainAutoreleasedReturnValue,objc_sync_enter,objc_sync_exit
+    classes: 
+    sels(0): 
+[0x4bf3ac] sub_0x4bf3ac
+    api: _Unwind_Resume,class_addMethod,class_getClassMethod,class_getName,method_getImplementation,method_getTypeEncoding,method_setImplementation,objc_release,objc_retainAutoreleasedReturnValue,objc_sync_enter,objc_sync_exit,object_getClass
+    classes: 
+    sels(0): 
+[0x4bfd38] sub_0x4bfd38
+    api: NSClassFromString,_Unwind_Resume,__stack_chk_fail,class_addMethod,class_getClassMethod,class_getName,dispatch_once,method_getImplementation,method_getTypeEncoding,method_setImplementation,objc_enumerationMutation,objc_release,objc_retainAutoreleasedReturnValue,object_getClass
+    classes: 
+    sels(0): 
+[0x4c0664] sub_0x4c0664
+    api: NSStringFromSelector,_Unwind_Resume,class_addMethod,class_getInstanceMethod,class_getName,method_getImplementation,method_getTypeEncoding,method_setImplementation,objc_release,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x4c11b0] sub_0x4c11b0
+    api: NSClassFromString,class_getInstanceMethod,method_getImplementation,method_setImplementation
+    classes: 
+    sels(0): 
+[0x4c4624] sub_0x4c4624
+    api: objc_getClass,object_getClass
+    classes: 
+    sels(0): 
+[0x4c4760] sub_0x4c4760
+    api: objc_getClass
+    classes: 
+    sels(0): 
+[0x4cb264] sub_0x4cb264
+    api: _Unwind_Resume,__stack_chk_fail,class_addMethod,objc_getClass,objc_release,objc_retainAutoreleasedReturnValue,sel_registerName
+    classes: 
+    sels(0): 
+[0x4d3640] sub_0x4d3640
+    api: _Unwind_Resume,__stack_chk_fail,objc_autoreleasePoolPop,objc_autoreleasePoolPush,objc_autoreleaseReturnValue,objc_enumerationMutation,objc_getClass,objc_opt_isKindOfClass,objc_release,objc_retain,objc_retainAutorelease,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x4d3878] sub_0x4d3878
+    api: _Unwind_Resume,__stack_chk_fail,objc_autoreleasePoolPop,objc_autoreleasePoolPush,objc_autoreleaseReturnValue,objc_enumerationMutation,objc_getClass,objc_opt_class,objc_opt_isKindOfClass,objc_release,objc_retain,objc_retainAutorelease,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x4d408c] sub_0x4d408c
+    api: _Unwind_Resume,objc_getClass,objc_opt_isKindOfClass,objc_release,objc_retain,objc_retainAutorelease,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x4d4408] sub_0x4d4408
+    api: _Unwind_Resume,__stack_chk_fail,objc_enumerationMutation,objc_getClass,objc_opt_class,objc_release,objc_retain,objc_retainAutorelease,objc_retainAutoreleasedReturnValue,objc_sync_enter,objc_sync_exit
+    classes: 
+    sels(0): 
+[0x4d7514] sub_0x4d7514
+    api: NSClassFromString,_Unwind_Resume,__stack_chk_fail,objc_enumerationMutation,objc_getClass
+    classes: 
+    sels(0): 
+[0x4e0088] sub_0x4e0088
+    api: NSSelectorFromString,_Unwind_Resume,__stack_chk_fail,class_getInstanceMethod,method_getTypeEncoding,objc_begin_catch,objc_end_catch,objc_enumerationMutation,objc_msgSend,objc_opt_class,objc_opt_isKindOfClass,objc_opt_respondsToSelector,objc_release,objc_retain,objc_retainAutoreleasedReturnValue,objc_sync_enter,objc_sync_exit
+    classes: _OBJC_CLASS_$_AVURLAsset
+    sels(0): 
+[0x4e0dd8] sub_0x4e0dd8
+    api: NSSelectorFromString,NSStringFromClass,_Unwind_Resume,__stack_chk_fail,class_getInstanceMethod,dispatch_after,dispatch_once,dispatch_time,method_getNumberOfArguments,method_getTypeEncoding,objc_begin_catch,objc_end_catch,objc_enumerationMutation,objc_msgSend,objc_opt_class,objc_opt_isKindOfClass,objc_opt_respondsToSelector,objc_release,objc_retain,objc_retainAutoreleasedReturnValue,objc_sync_enter,objc_sync_exit
+    classes: 
+    sels(0): 
+[0x4e2f34] sub_0x4e2f34
+    api: NSStringFromSelector,_Unwind_Resume,class_getInstanceMethod,method_getTypeEncoding,objc_autoreleaseReturnValue,objc_begin_catch,objc_end_catch,objc_msgSend,objc_opt_class,objc_opt_isKindOfClass,objc_opt_respondsToSelector,objc_release,objc_retain,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x4e3828] sub_0x4e3828
+    api: _Unwind_Resume,class_getInstanceMethod,method_getNumberOfArguments,method_getTypeEncoding,objc_begin_catch,objc_end_catch,objc_msgSend,objc_opt_class,objc_opt_respondsToSelector,objc_release,objc_retain,objc_unsafeClaimAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x4e3b50] sub_0x4e3b50
+    api: _Unwind_Resume,class_getInstanceMethod,method_getNumberOfArguments,method_getTypeEncoding,objc_begin_catch,objc_end_catch,objc_msgSend,objc_opt_class,objc_opt_respondsToSelector,objc_release,objc_retain,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x4e3c38] sub_0x4e3c38
+    api: _Unwind_Resume,class_getInstanceMethod,method_getNumberOfArguments,objc_begin_catch,objc_end_catch,objc_msgSend,objc_opt_class,objc_opt_respondsToSelector,objc_release,objc_retain,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x4e3ec0] sub_0x4e3ec0
+    api: _Unwind_Resume,class_getInstanceMethod,method_getNumberOfArguments,method_getTypeEncoding,objc_begin_catch,objc_end_catch,objc_msgSend,objc_opt_class,objc_opt_respondsToSelector,objc_release,objc_retain
+    classes: 
+    sels(0): 
+[0x4e4c94] sub_0x4e4c94
+    api: _Unwind_Resume,class_getInstanceMethod,method_getNumberOfArguments,method_getTypeEncoding,objc_autoreleaseReturnValue,objc_begin_catch,objc_end_catch,objc_msgSend,objc_opt_class,objc_opt_respondsToSelector,objc_release,objc_retain,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x4e5090] sub_0x4e5090
+    api: _Unwind_Resume,class_getInstanceMethod,method_getNumberOfArguments,objc_begin_catch,objc_end_catch,objc_msgSend,objc_opt_class,objc_opt_respondsToSelector,objc_release,objc_retain,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x4e7f04] sub_0x4e7f04
+    api: objc_getClass,object_getClass
+    classes: 
+    sels(0): 
+[0x4ecf38] sub_0x4ecf38
+    api: objc_getClass
+    classes: 
+    sels(0): 
+[0x4edd40] sub_0x4edd40
+    api: _Unwind_Resume,__stack_chk_fail,objc_getClass,objc_release,objc_retainAutoreleasedReturnValue,object_getClass
+    classes: 
+    sels(0): 
+[0x4f4668] sub_0x4f4668
+    api: _Unwind_Resume,__stack_chk_fail,objc_getClass,objc_release,objc_retainAutoreleasedReturnValue,object_getClass
+    classes: 
+    sels(0): 
+[0x4f5e70] sub_0x4f5e70
+    api: _Unwind_Resume,__stack_chk_fail,objc_getClass,objc_release,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x4f9c54] sub_0x4f9c54
+    api: _Unwind_Resume,objc_getClass,objc_release,objc_retainAutoreleasedReturnValue,object_getClass
+    classes: 
+    sels(0): 
+[0x4fc144] SJJPrivacyRecordUploadGuard +valueForSelector:fromObject:
+    api: _Unwind_Resume,__stack_chk_fail,class_getInstanceMethod,method_getNumberOfArguments,method_getReturnType,objc_autoreleaseReturnValue,objc_begin_catch,objc_end_catch,objc_msgSend,objc_opt_respondsToSelector,objc_release,objc_retain,objc_retainAutoreleasedReturnValue,object_getClass
+    classes: 
+    sels(0): 
+[0x4fc888] sub_0x4fc888
+    api: __stack_chk_fail,class_addMethod,objc_getClass
+    classes: 
+    sels(0): 
+[0x520358] sub_0x520358
+    api: NSClassFromString,NSSelectorFromString,class_getInstanceMethod
+    classes: 
+    sels(0): 
+[0x520544] sub_0x520544
+    api: objc_getClass
+    classes: 
+    sels(0): 
+[0x5234a0] sub_0x5234a0
+    api: class_addMethod,class_getInstanceMethod,method_getImplementation,method_getTypeEncoding,method_setImplementation
+    classes: 
+    sels(0): 
+[0x529e74] sub_0x529e74
+    api: NSSelectorFromString,_Unwind_Resume,__stack_chk_fail,class_getInstanceMethod,method_getImplementation,method_setImplementation,objc_getClass,objc_release,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x5357fc] sub_0x5357fc
+    api: objc_getClass
+    classes: 
+    sels(0): 
+[0x539720] sub_0x539720
+    api: objc_getClass
+    classes: 
+    sels(0): 
+[0x53a030] sub_0x53a030
+    api: _Unwind_Resume,__stack_chk_fail,objc_getClass,objc_release,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x53fd04] sub_0x53fd04
+    api: _Unwind_Resume,__stack_chk_fail,dispatch_after,dispatch_time,objc_enumerationMutation,objc_getClass,object_getClass
+    classes: 
+    sels(0): 
+[0x542ca0] sub_0x542ca0
+    api: _Unwind_Resume,__stack_chk_fail,objc_enumerationMutation,objc_getAssociatedObject,objc_getClass,objc_opt_class,objc_opt_isKindOfClass,objc_release,objc_retain,objc_retainAutorelease,objc_retainAutoreleasedReturnValue,objc_setAssociatedObject
+    classes: 
+    sels(0): 
+[0x54c144] sub_0x54c144
+    api: _Unwind_Resume,objc_getAssociatedObject,objc_getClass,objc_opt_isKindOfClass,objc_release,objc_retain,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x54d3b0] sub_0x54d3b0
+    api: _Unwind_Resume,objc_getClass,objc_opt_isKindOfClass,objc_release,objc_retain
+    classes: 
+    sels(0): 
+[0x54d454] sub_0x54d454
+    api: _Unwind_Resume,__stack_chk_fail,objc_enumerationMutation,objc_getAssociatedObject,objc_getClass,objc_opt_class,objc_opt_isKindOfClass,objc_release,objc_retain,objc_retainAutoreleasedReturnValue,objc_setAssociatedObject
+    classes: 
+    sels(0): 
+[0x54da38] sub_0x54da38
+    api: _Unwind_Resume,objc_getClass,objc_opt_class,objc_opt_isKindOfClass,objc_release,objc_retain,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x54fa44] sub_0x54fa44
+    api: NSStringFromClass,_Unwind_Resume,__stack_chk_fail,objc_enumerationMutation,objc_getClass,objc_opt_class,objc_opt_isKindOfClass,objc_release,objc_retain,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x5501ac] sub_0x5501ac
+    api: NSStringFromClass,_Unwind_Resume,__stack_chk_fail,objc_enumerationMutation,objc_getClass,objc_opt_class,objc_opt_isKindOfClass,objc_release,objc_retain,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x550f00] sub_0x550f00
+    api: NSStringFromClass,_Unwind_Resume,objc_getClass,objc_opt_class,objc_opt_isKindOfClass,objc_release,objc_retain,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x5523f4] sub_0x5523f4
+    api: class_getClassMethod,class_getInstanceMethod,objc_getClass,object_getClass
+    classes: 
+    sels(0): 
+[0x552b7c] sub_0x552b7c
+    api: NSSelectorFromString,_Unwind_Resume,__stack_chk_fail,class_getInstanceMethod,objc_enumerationMutation,objc_release,objc_retain
+    classes: 
+    sels(0): 
+[0x553768] sub_0x553768
+    api: NSSelectorFromString,NSStringFromClass,_Unwind_Resume,__stack_chk_fail,objc_begin_catch,objc_end_catch,objc_enumerationMutation,objc_getClass,objc_msgSend,objc_opt_class,objc_opt_isKindOfClass,objc_opt_respondsToSelector,objc_release,objc_retain,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x5578e0] sub_0x5578e0
+    api: objc_getClass
+    classes: 
+    sels(0): 
+[0x557ce4] sub_0x557ce4
+    api: NSLog,NSStringFromClass,__stack_chk_fail,class_getInstanceMethod,dispatch_once,method_getImplementation,method_setImplementation,objc_enumerationMutation,objc_getClass,objc_release,objc_retain,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x55825c] sub_0x55825c
+    api: class_addMethod,class_copyMethodList,class_getInstanceMethod,free,method_getImplementation,method_getName,method_getTypeEncoding,method_setImplementation
+    classes: 
+    sels(0): 
+[0x5583f4] sub_0x5583f4
+    api: class_getInstanceMethod,method_getImplementation,method_setImplementation
+    classes: 
+    sels(0): 
+[0x55865c] sub_0x55865c
+    api: NSClassFromString,NSStringFromClass,class_getInstanceMethod,method_getImplementation,method_setImplementation,objc_getClass,objc_release,objc_retain,objc_retainAutorelease,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x5587d4] sub_0x5587d4
+    api: NSClassFromString,objc_getClass,objc_release,objc_retain,objc_retainAutorelease,objc_retainAutoreleaseReturnValue
+    classes: 
+    sels(0): 
+[0x558ed8] sub_0x558ed8
+    api: class_addMethod,class_copyMethodList,class_getClassMethod,class_getInstanceMethod,free,method_getImplementation,method_getName,method_getTypeEncoding,method_setImplementation,object_getClass
+    classes: 
+    sels(0): 
+[0x55a898] sub_0x55a898
+    api: class_addMethod,class_getInstanceMethod,method_getImplementation,method_getTypeEncoding,method_setImplementation,strcmp
+    classes: 
+    sels(0): 
+[0x55aa1c] sub_0x55aa1c
+    api: class_getInstanceMethod,method_getImplementation,method_getTypeEncoding,method_setImplementation,strcmp
+    classes: 
+    sels(0): 
+[0x5605f0] sub_0x5605f0
+    api: objc_getClass,object_getClass
+    classes: 
+    sels(0): 
+[0x570610] sub_0x570610
+    api: objc_getClass
+    classes: 
+    sels(0): 
+[0x5741b8] sub_0x5741b8
+    api: class_getInstanceMethod
+    classes: 
+    sels(0): 
+[0x575848] sub_0x575848
+    api: _Unwind_Resume,objc_autoreleaseReturnValue,objc_getClass,objc_opt_class,objc_opt_isKindOfClass,objc_release,objc_retain,objc_retainAutorelease,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x576010] sub_0x576010
+    api: _Unwind_Resume,__stack_chk_fail,objc_enumerationMutation,objc_getClass,objc_opt_isKindOfClass,objc_release,objc_retain,objc_retainAutorelease,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x576c44] sub_0x576c44
+    api: _Unwind_Resume,__stack_chk_fail,objc_autoreleaseReturnValue,objc_enumerationMutation,objc_getAssociatedObject,objc_getClass,objc_opt_isKindOfClass,objc_release,objc_retain,objc_retainAutorelease,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x577ce0] sub_0x577ce0
+    api: class_getInstanceMethod
+    classes: 
+    sels(0): 
+[0x5790d4] sub_0x5790d4
+    api: objc_getClass,object_getClass
+    classes: 
+    sels(0): 
+[0x587264] sub_0x587264
+    api: objc_getClass
+    classes: 
+    sels(0): 
+[0x5a15ec] sub_0x5a15ec
+    api: NSClassFromString,objc_getClass,sel_registerName
+    classes: 
+    sels(0): 
+[0x5a65f4] sub_0x5a65f4
+    api: class_getInstanceMethod
+    classes: 
+    sels(0): 
+[0x5a69ac] sub_0x5a69ac
+    api: dispatch_after,dispatch_time,objc_getClass,sel_registerName
+    classes: 
+    sels(0): 
+[0x5aa174] sub_0x5aa174
+    api: objc_getClass
+    classes: 
+    sels(0): 
+[0x5b6a44] sub_0x5b6a44
+    api: objc_getClass
+    classes: 
+    sels(0): 
+[0x5bfed0] sub_0x5bfed0
+    api: objc_getClass
+    classes: 
+    sels(0): 
+[0x5c1c4c] sub_0x5c1c4c
+    api: _Unwind_Resume,__stack_chk_fail,objc_getClass,objc_release,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x5c2304] sub_0x5c2304
+    api: _Unwind_Resume,objc_getClass,objc_opt_isKindOfClass,objc_release,objc_retainAutorelease,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x5c2400] sub_0x5c2400
+    api: _Unwind_Resume,objc_getClass,objc_opt_isKindOfClass,objc_release,objc_retainAutorelease,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x5c33e8] sub_0x5c33e8
+    api: _Unwind_Resume,__stack_chk_fail,objc_autoreleaseReturnValue,objc_enumerationMutation,objc_getClass,objc_opt_class,objc_opt_isKindOfClass,objc_release,objc_retain,objc_retainAutorelease,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x5c46d4] sub_0x5c46d4
+    api: _Unwind_Resume,__stack_chk_fail,objc_enumerationMutation,objc_getClass,objc_opt_isKindOfClass,objc_release,objc_retain,objc_retainAutorelease,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x5c5654] sub_0x5c5654
+    api: CGRectGetMaxY,CGRectGetMinY,CGRectGetWidth,_Unwind_Resume,__stack_chk_fail,objc_enumerationMutation,objc_getAssociatedObject,objc_getClass,objc_opt_isKindOfClass,objc_release,objc_retain,objc_retainAutorelease,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x5c7cc0] sub_0x5c7cc0
+    api: _Unwind_Resume,__stack_chk_fail,objc_enumerationMutation,objc_getClass,objc_opt_isKindOfClass,objc_release,objc_retain,objc_retainAutorelease,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x5ca1bc] sub_0x5ca1bc
+    api: _Unwind_Resume,__stack_chk_fail,objc_enumerationMutation,objc_getClass,objc_opt_isKindOfClass,objc_release,objc_retain,objc_retainAutorelease,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x5cb5c8] sub_0x5cb5c8
+    api: NSClassFromString,objc_getClass,objc_release,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x5cb948] sub_0x5cb948
+    api: _Unwind_Resume,objc_getClass,objc_opt_isKindOfClass,objc_release,objc_retain,objc_retainAutorelease,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x5cdab0] sub_0x5cdab0
+    api: _Unwind_Resume,__stack_chk_fail,objc_autoreleaseReturnValue,objc_enumerationMutation,objc_getClass,objc_opt_isKindOfClass,objc_release,objc_retain,objc_retainAutorelease,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x5cf2e0] sub_0x5cf2e0
+    api: _Unwind_Resume,objc_autoreleaseReturnValue,objc_getClass,objc_opt_isKindOfClass,objc_release,objc_retain,objc_retainAutorelease,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x5d0920] sub_0x5d0920
+    api: NSClassFromString,objc_getClass,objc_release,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x5d2a08] sub_0x5d2a08
+    api: CGBitmapContextCreate,CGBitmapContextCreateImage,CGColorSpaceCreateDeviceRGB,CGColorSpaceRelease,CGContextDrawImage,CGContextRelease,CGImageGetHeight,CGImageGetWidth,CGImageRelease,_Unwind_Resume,__stack_chk_fail,calloc,dispatch_async,free,objc_enumerationMutation,objc_getAssociatedObject,objc_getClass,objc_opt_class,objc_opt_isKindOfClass,objc_release,objc_retain,objc_retainAutorelease,objc_retainAutoreleasedReturnValue,objc_setAssociatedObject
+    classes: 
+    sels(0): 
+[0x5d3fd8] sub_0x5d3fd8
+    api: _Unwind_Resume,__stack_chk_fail,objc_getClass,objc_release,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x5d49dc] sub_0x5d49dc
+    api: _Unwind_Resume,__stack_chk_fail,objc_autoreleaseReturnValue,objc_enumerationMutation,objc_getClass,objc_opt_class,objc_opt_isKindOfClass,objc_release,objc_retain,objc_retainAutorelease,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x5d6464] sub_0x5d6464
+    api: CGRectGetMaxY,CGRectGetMinY,CGRectGetWidth,_Unwind_Resume,__stack_chk_fail,objc_enumerationMutation,objc_getAssociatedObject,objc_getClass,objc_opt_isKindOfClass,objc_release,objc_retain,objc_retainAutorelease,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x5d900c] sub_0x5d900c
+    api: _Unwind_Resume,__stack_chk_fail,objc_enumerationMutation,objc_getClass,objc_opt_isKindOfClass,objc_release,objc_retain,objc_retainAutorelease,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x5fcb78] sub_0x5fcb78
+    api: NSClassFromString,class_addMethod,class_respondsToSelector,dispatch_once,objc_autoreleasePoolPop,objc_autoreleasePoolPush,objc_getClass,objc_opt_class
+    classes: 
+    sels(0): 
+[0x6041b8] sub_0x6041b8
+    api: _Unwind_Resume,objc_autoreleaseReturnValue,objc_begin_catch,objc_end_catch,objc_getClass,objc_msgSend,objc_opt_class,objc_opt_isKindOfClass,objc_opt_respondsToSelector,objc_release,objc_retain,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x611e20] sub_0x611e20
+    api: objc_getClass,objc_release,objc_retainAutoreleasedReturnValue,objc_unsafeClaimAutoreleasedReturnValue
+    classes: 
+    sels(0): 
+[0x615620] sub_0x615620
+    api: objc_getClass
+    classes: 
+    sels(0): 
+[0x615bcc] sub_0x615bcc
+    api: objc_getClass
+    classes: 
+    sels(0): 
+[0x615be4] sub_0x615be4
+    api: class_addMethod
+    classes: 
+    sels(0): 
+[0x616730] sub_0x616730
+    api: NSSelectorFromString,_Unwind_Resume,__stack_chk_fail,objc_alloc,objc_alloc_init,objc_begin_catch,objc_end_catch,objc_enumerationMutation,objc_getClass,objc_msgSend,objc_opt_new,objc_opt_respondsToSelector,objc_release,objc_retain,objc_retainAutorelease,objc_retainAutoreleasedReturnValue
+    classes: 
+    sels(0): 
