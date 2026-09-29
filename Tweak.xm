@@ -586,49 +586,99 @@ typedef NS_ENUM(NSInteger, FDCommentStep) {
 
 - (void)scrollFeedNextWith:(UIScrollView *)sv {
     if (!sv) { FDLog(@"feed: paging scroll not found"); return; }
+    [self advanceFeedStep:0 sv:sv];
+}
 
-    // 1) 官方路径：scrollToNextVideo（抖音优化自动播放实测可用的方法名）
-    if ([self callScrollToNextVideoFrom:FDTopVC()]) return;
-
-    // 2) 运行时发现的 next 选择器
-    UIViewController *top = FDTopVC();
-    SEL nextSel = [self nextVideoSelectorForTopVC:top];
-    if (nextSel) {
-        @try {
-            #pragma clang diagnostic push
-            #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-            [top performSelector:nextSel];
-            #pragma clang diagnostic pop
-            FDLog(@"feed: called app next-video method %@ on %@", NSStringFromSelector(nextSel), NSStringFromClass([top class]));
-            return;
-        } @catch (NSException *e) {
-            FDLog(@"feed: next-video method exception %@", e);
-        }
-    }
-
-    // 3) UICollectionView 自己的滚动 API（走正规回调链）
-    if ([sv isKindOfClass:UICollectionView.class]) {
-        UICollectionView *cv = (UICollectionView *)sv;
-        @try {
-            NSInteger page = (NSInteger)round(sv.contentOffset.y / MAX(sv.bounds.size.height, 1));
-            NSInteger n = [cv numberOfItemsInSection:0];
-            NSInteger target = page + 1;
-            if (target < n) {
-                NSIndexPath *ip = [NSIndexPath indexPathForItem:target inSection:0];
-                [cv scrollToItemAtIndexPath:ip atScrollPosition:UICollectionViewScrollPositionTop animated:YES];
-                FDLog(@"feed: scrollToItem index=%ld (of %ld)", (long)target, (long)n);
+// 带验证的切视频：每条路径调用后 0.9s 检查 contentOffset 是否真的移动，没动自动降级
+- (void)advanceFeedStep:(NSInteger)step sv:(UIScrollView *)sv {
+    CGPoint before = sv.contentOffset;
+    switch (step) {
+        case 0: {
+            // 路径1：抖音优化同款 scrollToNextVideo
+            if ([self callScrollToNextVideoFrom:FDTopVC()]) {
+                [self verifyAdvance:step sv:sv from:before];
                 return;
             }
-        } @catch (NSException *e) {
-            FDLog(@"feed: scrollToItem exception %@", e);
+            [self advanceFeedStep:1 sv:sv];
+            return;
+        }
+        case 1: {
+            // 路径2：运行时发现的 next 选择器
+            UIViewController *top = FDTopVC();
+            SEL nextSel = [self nextVideoSelectorForTopVC:top];
+            if (nextSel) {
+                @try {
+                    #pragma clang diagnostic push
+                    #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+                    [top performSelector:nextSel];
+                    #pragma clang diagnostic pop
+                    [self verifyAdvance:step sv:sv from:before];
+                    return;
+                } @catch (NSException *e) {
+                    FDLog(@"feed: next-video method exception %@", e);
+                }
+            }
+            [self advanceFeedStep:2 sv:sv];
+            return;
+        }
+        case 2: {
+            // 路径3：UICollectionView scrollToItem + 手动补发滚动结束回调（触发播放器切换）
+            if ([sv isKindOfClass:UICollectionView.class]) {
+                UICollectionView *cv = (UICollectionView *)sv;
+                @try {
+                    NSInteger page = (NSInteger)round(sv.contentOffset.y / MAX(sv.bounds.size.height, 1));
+                    NSInteger n = [cv numberOfItemsInSection:0];
+                    NSInteger target = page + 1;
+                    if (target < n) {
+                        NSIndexPath *ip = [NSIndexPath indexPathForItem:target inSection:0];
+                        [cv scrollToItemAtIndexPath:ip atScrollPosition:UICollectionViewScrollPositionTop animated:YES];
+                        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.55 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                            [self fireScrollEndFor:sv];
+                        });
+                        [self verifyAdvance:step sv:sv from:before];
+                        return;
+                    }
+                } @catch (NSException *e) {
+                    FDLog(@"feed: scrollToItem exception %@", e);
+                }
+            }
+            [self advanceFeedStep:3 sv:sv];
+            return;
+        }
+        default: {
+            // 路径4：强滚 + 补发滚动结束回调
+            CGPoint off = sv.contentOffset;
+            off.y += sv.bounds.size.height;
+            [sv setContentOffset:off animated:NO];
+            [self fireScrollEndFor:sv];
+            FDLog(@"feed: fallback scrolled to y=%.0f + end callback", off.y);
+            return;
         }
     }
+}
 
-    // 4) 兜底：直接强滚（可能黑屏，仅保底）
-    CGPoint off = sv.contentOffset;
-    off.y += sv.bounds.size.height;
-    [sv setContentOffset:off animated:YES];
-    FDLog(@"feed: fallback scrolled to y=%.0f", off.y);
+- (void)verifyAdvance:(NSInteger)step sv:(UIScrollView *)sv from:(CGPoint)before {
+    __weak UIScrollView *wsv = sv;
+    __weak typeof(self) ws = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.9 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        UIScrollView *s2 = wsv;
+        if (!s2 || !ws) return;
+        if (fabs(s2.contentOffset.y - before.y) > 60) {
+            FDLog(@"feed: advanced via step %ld (y=%.0f)", (long)step, s2.contentOffset.y);
+            return;
+        }
+        FDLog(@"feed: step %ld no movement, trying next", (long)step);
+        [ws advanceFeedStep:step + 1 sv:s2];
+    });
+}
+
+// 手动补发滚动结束回调：抖音靠 scrollViewDidEndDecelerating 切换播放器（强滚黑屏的根因）
+- (void)fireScrollEndFor:(UIScrollView *)sv {
+    id del = sv.delegate;
+    if (del && [del respondsToSelector:@selector(scrollViewDidEndDecelerating:)]) {
+        ((void (*)(id, SEL, id))objc_msgSend)(del, @selector(scrollViewDidEndDecelerating:), sv);
+        FDLog(@"feed: fired scrollViewDidEndDecelerating");
+    }
 }
 
 // 抖音优化同款：从推荐页 VC 及其分页管理器上调用 scrollToNextVideo
