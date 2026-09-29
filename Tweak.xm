@@ -293,7 +293,7 @@ static UIViewController *FDTopVC(void) {
             }
             if (!pass.sendButton && [v isKindOfClass:UIControl.class]) {
                 UIControl *c = (UIControl *)v;
-                NSString *t = c.currentTitle ?: @"";
+                NSString *t = ([c isKindOfClass:UIButton.class] ? [(UIButton *)c currentTitle] : @"") ?: @"";
                 NSString *a = c.accessibilityLabel ?: @"";
                 if ([t rangeOfString:@"发送"].location != NSNotFound ||
                     [a rangeOfString:@"发送"].location != NSNotFound) {
