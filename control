@@ -1,8 +1,8 @@
 Package: com.fudai.ios
 Name: FuDai iOS
-Version: 0.3.0
+Version: 0.4.0
 Architecture: iphoneos-arm64e
-Description: Douyin red packet helper
+Description: Douyin lucky-bag helper (auto grab engine)
 Maintainer: local
 Author: local
 Section: Tweaks
