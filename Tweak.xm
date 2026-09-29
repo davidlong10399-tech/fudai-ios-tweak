@@ -160,7 +160,7 @@ static BOOL FDInvokeGestureTargets(UIGestureRecognizer *gr) {
 }
 @end
 
-#pragma mark - 视图扫描
+#pragma mark - 视图扫描（单次合并扫描 + 时间预算，防主线程卡死）
 
 static BOOL FDTextMatches(NSString *text, NSArray<NSString *> *contains, NSArray<NSString *> *exact, NSInteger maxLen) {
     if (![text isKindOfClass:NSString.class] || text.length == 0 || (NSInteger)text.length > maxLen) return NO;
@@ -203,14 +203,32 @@ static UIViewController *FDTopVC(void) {
     return vc;
 }
 
+// 一次遍历同时收集所有需要的目标；80ms 硬时限 + 1200 节点上限，超时立即中止
+@interface FDScanPass : NSObject
+@property (nonatomic, copy) NSArray<NSString *> *textContains;   // 福袋关键字（UILabel 文字）
+@property (nonatomic, copy) NSArray<NSString *> *claimContains;  // 参与/领取类（UILabel 文字）
+@property (nonatomic, copy) NSArray<NSString *> *a11yNeed;       // 需要的辅助功能按钮（accessibilityLabel）
+@property (nonatomic, strong) UIView *textHit;
+@property (nonatomic, strong) UIView *claimHit;
+@property (nonatomic, strong) NSMutableDictionary<NSString *, UIView *> *a11yHits;
+@property (nonatomic, strong) UIView *textField;
+@property (nonatomic, strong) UIControl *sendButton;
+@property (nonatomic, strong) UIScrollView *feedScroll;
+@property (nonatomic, assign) CFAbsoluteTime deadline;
+@end
+
+@implementation FDScanPass
+- (instancetype)init {
+    if ((self = [super init])) {
+        _a11yHits = [NSMutableDictionary dictionary];
+        _deadline = CFAbsoluteTimeGetCurrent() + 0.08;
+    }
+    return self;
+}
+@end
+
 @interface FDScanner : NSObject
-+ (UIView *)firstVisibleMatchWithContains:(NSArray<NSString *> *)contains
-                                    exact:(NSArray<NSString *> *)exact
-                                   maxLen:(NSInteger)maxLen;
-+ (UIView *)firstAccessibleMatchWithContains:(NSArray<NSString *> *)contains maxLen:(NSInteger)maxLen;
-+ (UIScrollView *)pagingFeedScroll;
-+ (UIView *)firstTextFieldOrTextView;
-+ (UIControl *)findSendButton;
++ (void)runPass:(FDScanPass *)pass;
 + (NSInteger)visibleNodeCount;
 @end
 
@@ -230,125 +248,74 @@ static UIViewController *FDTopVC(void) {
     return windows;
 }
 
-+ (BOOL)viewIsVisible:(UIView *)v inWindow:(UIWindow *)w {
-    if (v.hidden || v.alpha < 0.1 || v.userInteractionEnabled == NO) return NO;
-    CGRect frameInWindow = [v convertRect:v.bounds toView:w];
-    CGRect visible = CGRectIntersection(frameInWindow, w.bounds);
-    return visible.size.width > 4 && visible.size.height > 4;
-}
-
-+ (UIView *)searchWithContains:(NSArray<NSString *> *)contains
-                         exact:(NSArray<NSString *> *)exact
-                        maxLen:(NSInteger)maxLen
-                        window:(UIWindow *)w
-                        budget:(NSInteger *)budget {
-    NSMutableArray *stack = [NSMutableArray arrayWithObject:w];
-    UIView *bestControl = nil;
-    while (stack.count > 0 && *budget > 0) {
-        UIView *v = stack.lastObject;
-        [stack removeLastObject];
-        (*budget)--;
-        if (![v isKindOfClass:UIView.class]) continue;
-        if (![self viewIsVisible:v inWindow:w]) continue;
-        if ([v isKindOfClass:UILabel.class]) {
-            UILabel *l = (UILabel *)v;
-            if (FDTextMatches(l.text, contains, exact, maxLen)) {
-                if ([v isKindOfClass:UIControl.class]) return v;
-                if (!bestControl) bestControl = v;
-            }
-        }
-        for (UIView *sub in [v.subviews reverseObjectEnumerator]) [stack addObject:sub];
-    }
-    return bestControl;
-}
-
-+ (UIView *)firstVisibleMatchWithContains:(NSArray<NSString *> *)contains
-                                    exact:(NSArray<NSString *> *)exact
-                                   maxLen:(NSInteger)maxLen {
-    NSInteger budget = 2500;
-    for (UIWindow *w in [self scannableWindows]) {
-        UIView *hit = [self searchWithContains:contains exact:exact maxLen:maxLen window:w budget:&budget];
-        if (hit) return hit;
-    }
-    return nil;
-}
-
-// 按 accessibilityLabel 找按钮（抖音给侧边栏按钮设了"点赞/评论/收藏/分享"等标签）
-+ (UIView *)firstAccessibleMatchWithContains:(NSArray<NSString *> *)contains maxLen:(NSInteger)maxLen {
-    NSInteger budget = 2000;
-    for (UIWindow *w in [self scannableWindows]) {
-        NSMutableArray *stack = [NSMutableArray arrayWithObject:w];
-        while (stack.count > 0 && budget > 0) {
-            UIView *v = stack.lastObject;
-            [stack removeLastObject];
-            budget--;
-            if (![v isKindOfClass:UIView.class]) continue;
-            if (![self viewIsVisible:v inWindow:w]) continue;
-            NSString *a11y = v.accessibilityLabel;
-            if (FDTextMatches(a11y, contains, @[], maxLen)) {
-                return v;
-            }
-            for (UIView *sub in [v.subviews reverseObjectEnumerator]) [stack addObject:sub];
-        }
-    }
-    return nil;
-}
-
-+ (UIScrollView *)pagingFeedScroll {
++ (void)runPass:(FDScanPass *)pass {
     CGSize screen = UIScreen.mainScreen.bounds.size;
     for (UIWindow *w in [self scannableWindows]) {
         NSMutableArray *stack = [NSMutableArray arrayWithObject:w];
-        NSInteger budget = 1500;
+        NSInteger budget = 1200;
         while (stack.count > 0 && budget > 0) {
-            UIView *v = stack.lastObject;
-            [stack removeLastObject];
-            budget--;
-            if (![v isKindOfClass:UIScrollView.class]) {
-                for (UIView *sub in [v.subviews reverseObjectEnumerator]) [stack addObject:sub];
-                continue;
-            }
-            UIScrollView *sv = (UIScrollView *)v;
-            if (sv.pagingEnabled && !sv.hidden && sv.alpha > 0.5 &&
-                sv.bounds.size.height > screen.height * 0.75 &&
-                sv.bounds.size.width > screen.width * 0.8) {
-                return sv;
-            }
-            for (UIView *sub in [v.subviews reverseObjectEnumerator]) [stack addObject:sub];
-        }
-    }
-    return nil;
-}
-
-+ (UIView *)firstTextFieldOrTextView {
-    for (UIWindow *w in [self scannableWindows]) {
-        NSMutableArray *stack = [NSMutableArray arrayWithObject:w];
-        NSInteger budget = 1800;
-        while (stack.count > 0 && budget > 0) {
+            if (CFAbsoluteTimeGetCurrent() > pass.deadline) return;
             UIView *v = stack.lastObject;
             [stack removeLastObject];
             budget--;
             if (![v isKindOfClass:UIView.class]) continue;
-            if (![self viewIsVisible:v inWindow:w]) continue;
-            if ([v isKindOfClass:UITextView.class] || [v isKindOfClass:UITextField.class]) return v;
+            if (v.hidden || v.alpha < 0.1) continue;
+            // 可见性：同 window 直接用 frame，免坐标换算
+            CGRect fw = (v.window == w) ? v.frame : [v convertRect:v.bounds toView:w];
+            CGRect vis = CGRectIntersection(fw, w.bounds);
+            if (vis.size.width <= 4 || vis.size.height <= 4) continue;
+
+            if (pass.textContains && !pass.textHit && [v isKindOfClass:UILabel.class]) {
+                NSString *t = ((UILabel *)v).text;
+                if (FDTextMatches(t, pass.textContains, @[], 20)) pass.textHit = v;
+            }
+            if (pass.claimContains && !pass.claimHit && [v isKindOfClass:UILabel.class]) {
+                NSString *t = ((UILabel *)v).text;
+                if (FDTextMatches(t, pass.claimContains, @[@"开"], 24) && ![t hasPrefix:@"已"]) pass.claimHit = v;
+            }
+            // a11y 按钮：只查小尺寸节点，避免命中巨型容器
+            if (pass.a11yNeed.count) {
+                CGSize sz = v.bounds.size;
+                if (sz.width < screen.width * 0.5 && sz.height < screen.height * 0.5) {
+                    NSString *a11y = v.accessibilityLabel;
+                    if (a11y.length > 0 && a11y.length <= 12) {
+                        for (NSString *need in pass.a11yNeed) {
+                            if (!pass.a11yHits[need] && [a11y rangeOfString:need].location != NSNotFound) {
+                                pass.a11yHits[need] = v;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            if (!pass.textField && ([v isKindOfClass:UITextView.class] || [v isKindOfClass:UITextField.class])) {
+                pass.textField = v;
+            }
+            if (!pass.sendButton && [v isKindOfClass:UIControl.class]) {
+                UIControl *c = (UIControl *)v;
+                NSString *t = c.currentTitle ?: @"";
+                NSString *a = c.accessibilityLabel ?: @"";
+                if ([t rangeOfString:@"发送"].location != NSNotFound ||
+                    [a rangeOfString:@"发送"].location != NSNotFound) {
+                    pass.sendButton = c;
+                }
+            }
+            if (!pass.feedScroll && [v isKindOfClass:UIScrollView.class]) {
+                UIScrollView *sv = (UIScrollView *)v;
+                if (sv.pagingEnabled &&
+                    sv.bounds.size.height > screen.height * 0.75 &&
+                    sv.bounds.size.width > screen.width * 0.8) {
+                    pass.feedScroll = sv;
+                }
+            }
             for (UIView *sub in [v.subviews reverseObjectEnumerator]) [stack addObject:sub];
         }
+        if (CFAbsoluteTimeGetCurrent() > pass.deadline) return;
     }
-    return nil;
-}
-
-+ (UIControl *)findSendButton {
-    UIView *v = [self firstVisibleMatchWithContains:@[@"发送"] exact:@[@"发送"] maxLen:6];
-    UIControl *c = nil;
-    UIView *walk = v;
-    for (int i = 0; i < 5 && walk; i++) {
-        if ([walk isKindOfClass:UIControl.class]) { c = (UIControl *)walk; break; }
-        walk = walk.superview;
-    }
-    return c;
 }
 
 + (NSInteger)visibleNodeCount {
-    NSInteger budget = 2500;
+    NSInteger budget = 1200;
     NSInteger count = 0;
     for (UIWindow *w in [self scannableWindows]) {
         NSMutableArray *stack = [NSMutableArray arrayWithObject:w];
@@ -492,15 +459,14 @@ typedef NS_ENUM(NSInteger, FDCommentStep) {
     NSInteger limit = (NSInteger)FDNum(FDDailyLimitKey, 30);
     if (limit > 0 && self->_dailyCount >= limit) { [self setStatus:@"今日上限已到"]; return; }
 
-    // 上下文识别
+    // 上下文识别（零遍历成本）
     NSString *cls = NSStringFromClass([FDTopVC() class]);
     BOOL inRoom = ([cls rangeOfString:@"Live" options:NSCaseInsensitiveSearch].location != NSNotFound);
     BOOL inFeed = (!inRoom && [cls rangeOfString:@"Feed" options:NSCaseInsensitiveSearch].location != NSNotFound);
     FDEngine engine = inRoom ? FDEngineRoom : (inFeed ? FDEngineFeed : FDEngineUnknown);
 
     if (engine != self->_engine) {
-        FDLog(@"engine=%@ -> %@ (top=%@)", self->_engine == FDEngineFeed ? @"Feed" : (self->_engine == FDEngineRoom ? @"Room" : @"?"),
-              inRoom ? @"Room" : (inFeed ? @"Feed" : @"?"), cls);
+        FDLog(@"engine -> %@ (top=%@)", inRoom ? @"Room" : (inFeed ? @"Feed" : @"?"), cls);
         self->_engine = engine;
         self->_engagedCurrentVideo = NO;
         self->_nextBrowseAct = nil;
@@ -508,95 +474,114 @@ typedef NS_ENUM(NSInteger, FDCommentStep) {
     }
 
     BOOL nurturing = (self->_nurtureDeadline && [now compare:self->_nurtureDeadline] == NSOrderedAscending);
+    BOOL commentActive = (self->_commentStep != FDCommentNone);
 
     if (engine == FDEngineFeed) {
-        [self browseTickAt:now nurturing:nurturing];
+        [self feedTickAt:now nurturing:nurturing commentActive:commentActive];
     } else if (engine == FDEngineRoom) {
-        [self roomTickAt:now];
+        [self roomTickAt:now commentActive:commentActive];
+    } else if (commentActive) {
+        // 评论面板打开时顶层VC是评论页，引擎显示 Unknown，仍要推进评论序列
+        FDScanPass *pass = [FDScanPass new];
+        [FDScanner runPass:pass];
+        [self commentTickWithPass:pass now:now];
     }
 }
 
 #pragma mark 推荐页：刷视频 + 互动 + 找福袋直播间
 
-- (void)browseTickAt:(NSDate *)now nurturing:(BOOL)nurturing {
-    // 1) 找福袋直播间卡片（安卓"寻找福袋 5秒"节奏）
-    if (!nurturing) {
-        if (!self->_nextCardScan || [now compare:self->_nextCardScan] == NSOrderedDescending) {
-            self->_nextCardScan = [now dateByAddingTimeInterval:5.0];
-            UIView *card = [FDScanner firstVisibleMatchWithContains:[self entryKeywords] exact:@[] maxLen:20];
-            if (card) {
-                if ([FDTap tapView:card]) {
-                    self->_lastLuckySignal = now;
-                    self->_stage = FDStageScanning;
-                    [self setStatus:@"发现福袋直播 · 进入"];
-                    FDLog(@"browse: live card tapped");
-                    return;
-                }
+- (void)feedTickAt:(NSDate *)now nurturing:(BOOL)nurturing commentActive:(BOOL)commentActive {
+    BOOL cardDue = !nurturing && (!self->_nextCardScan || [now compare:self->_nextCardScan] == NSOrderedDescending);
+    BOOL engageDue = !self->_nextBrowseAct || [now compare:self->_nextBrowseAct] == NSOrderedDescending;
+    BOOL scrollDue = self->_pendingScroll && [now compare:self->_pendingScroll] != NSOrderedAscending;
+
+    // 空闲时刻：完全不扫描，主线程零负担
+    if (!cardDue && !engageDue && !scrollDue && !commentActive) {
+        if (nurturing) {
+            [self setStatus:[NSString stringWithFormat:@"定时养号中 · 剩 %.0f 分", [self->_nurtureDeadline timeIntervalSinceDate:now] / 60.0]];
+        } else {
+            [self setStatus:@"浏览推荐页"];
+        }
+        return;
+    }
+
+    FDScanPass *pass = [FDScanPass new];
+    if (cardDue) pass.textContains = [self entryKeywords];
+    if (engageDue) pass.a11yNeed = @[@"点赞", @"赞", @"关注", @"头像", @"收藏", @"分享", @"评论"];
+    [FDScanner runPass:pass];
+
+    // 找福袋直播间卡片（安卓"寻找福袋 5秒"节奏）
+    if (cardDue) {
+        self->_nextCardScan = [now dateByAddingTimeInterval:5.0];
+        if (pass.textHit) {
+            if ([FDTap tapView:pass.textHit]) {
+                self->_lastLuckySignal = now;
+                self->_stage = FDStageScanning;
+                [self setStatus:@"发现福袋直播 · 进入"];
+                FDLog(@"browse: live card tapped");
+                return;
             }
         }
-    } else {
-        [self setStatus:[NSString stringWithFormat:@"定时养号中 · 剩 %.0f 分", [self->_nurtureDeadline timeIntervalSinceDate:now] / 60.0]];
     }
 
-    // 2) 评论序列推进
-    [self commentTickAt:now];
+    // 评论序列推进
+    [self commentTickWithPass:pass now:now];
 
-    // 3) 互动 + 滚动节奏（看视频1~5s，间隔1~3s）
-    if (!self->_nextBrowseAct) {
-        self->_nextBrowseAct = [now dateByAddingTimeInterval:FDRand((NSInteger)FDNum(FDWatchMinKey, 1), (NSInteger)FDNum(FDWatchMaxKey, 5))];
+    // 互动 + 滚动节奏（看视频1~5s，间隔1~3s）
+    if (engageDue) {
+        if (!self->_engagedCurrentVideo) {
+            self->_engagedCurrentVideo = YES;
+            [self rollFeedEngagementWithPass:pass];
+            self->_pendingScroll = [now dateByAddingTimeInterval:FDRand((NSInteger)FDNum(FDGapMinKey, 1), (NSInteger)FDNum(FDGapMaxKey, 3))];
+            return;
+        }
+        // 互动完毕且到点 → 滚下一个
+        [self scrollFeedNextWith:pass.feedScroll];
         self->_engagedCurrentVideo = NO;
+        self->_pendingScroll = nil;
+        self->_nextBrowseAct = [now dateByAddingTimeInterval:FDRand((NSInteger)FDNum(FDWatchMinKey, 1), (NSInteger)FDNum(FDWatchMaxKey, 5))];
+        if (!nurturing) [self setStatus:@"浏览推荐页"];
         return;
     }
-    if ([now compare:self->_nextBrowseAct] == NSOrderedAscending) return;
-
-    if (!self->_engagedCurrentVideo) {
-        self->_engagedCurrentVideo = YES;
-        [self rollFeedEngagement];
-        self->_pendingScroll = [now dateByAddingTimeInterval:FDRand((NSInteger)FDNum(FDGapMinKey, 1), (NSInteger)FDNum(FDGapMaxKey, 3))];
-        return;
+    if (scrollDue) {
+        [self scrollFeedNextWith:pass.feedScroll];
+        self->_pendingScroll = nil;
     }
-    if (self->_pendingScroll && [now compare:self->_pendingScroll] == NSOrderedAscending) return;
-    [self scrollFeedNext];
-    self->_engagedCurrentVideo = NO;
-    self->_pendingScroll = nil;
-    self->_nextBrowseAct = [now dateByAddingTimeInterval:FDRand((NSInteger)FDNum(FDWatchMinKey, 1), (NSInteger)FDNum(FDWatchMaxKey, 5))];
-    if (!nurturing) [self setStatus:@"浏览推荐页"];
 }
 
-- (void)rollFeedEngagement {
+- (void)rollFeedEngagementWithPass:(FDScanPass *)pass {
     NSInteger roll = FDRand(1, 100);
     if ((double)roll <= FDNum(FDPLikeKey, 35)) {
-        UIView *like = [FDScanner firstAccessibleMatchWithContains:@[@"点赞", @"赞"] maxLen:8];
+        UIView *like = pass.a11yHits[@"点赞"] ?: pass.a11yHits[@"赞"];
         if (like) { [FDTap tapView:like]; FDLog(@"feed: liked"); }
     }
     roll = FDRand(1, 100);
     if ((double)roll <= FDNum(FDPFollowKey, 10)) {
-        UIView *follow = [FDScanner firstAccessibleMatchWithContains:@[@"关注"] maxLen:6];
+        UIView *follow = pass.a11yHits[@"关注"];
         if (follow) { [FDTap tapView:follow]; FDLog(@"feed: followed"); }
     }
     roll = FDRand(1, 100);
     if ((double)roll <= FDNum(FDPProfileKey, 10)) {
-        UIView *avatar = [FDScanner firstAccessibleMatchWithContains:@[@"头像"] maxLen:8];
+        UIView *avatar = pass.a11yHits[@"头像"];
         if (avatar) { [FDTap tapView:avatar]; FDLog(@"feed: profile"); }
     }
     roll = FDRand(1, 100);
     if ((double)roll <= FDNum(FDPFavKey, 5)) {
-        UIView *fav = [FDScanner firstAccessibleMatchWithContains:@[@"收藏"] maxLen:6];
+        UIView *fav = pass.a11yHits[@"收藏"];
         if (fav) { [FDTap tapView:fav]; FDLog(@"feed: favorited"); }
     }
     roll = FDRand(1, 100);
     if ((double)roll <= FDNum(FDPShareKey, 3)) {
-        UIView *share = [FDScanner firstAccessibleMatchWithContains:@[@"分享"] maxLen:6];
+        UIView *share = pass.a11yHits[@"分享"];
         if (share) { [FDTap tapView:share]; FDLog(@"feed: share panel"); }
     }
     roll = FDRand(1, 100);
     if ((double)roll <= FDNum(FDPCommentKey, 20)) {
-        [self startCommentSequence];
+        [self startCommentWithView:pass.a11yHits[@"评论"]];
     }
 }
 
-- (void)scrollFeedNext {
-    UIScrollView *sv = [FDScanner pagingFeedScroll];
+- (void)scrollFeedNextWith:(UIScrollView *)sv {
     if (!sv) { FDLog(@"feed: paging scroll not found"); return; }
     CGPoint off = sv.contentOffset;
     off.y += sv.bounds.size.height;
@@ -606,10 +591,8 @@ typedef NS_ENUM(NSInteger, FDCommentStep) {
 
 #pragma mark 评论序列（跨 tick 状态机）
 
-- (void)startCommentSequence {
-    if (self->_commentStep != FDCommentNone) return;
-    UIView *btn = [FDScanner firstAccessibleMatchWithContains:@[@"评论"] maxLen:6];
-    if (!btn) return;
+- (void)startCommentWithView:(UIView *)btn {
+    if (self->_commentStep != FDCommentNone || !btn) return;
     if ([FDTap tapView:btn]) {
         self->_commentStep = FDCommentOpening;
         self->_commentDeadline = [NSDate dateWithTimeIntervalSinceNow:6.0];
@@ -617,7 +600,7 @@ typedef NS_ENUM(NSInteger, FDCommentStep) {
     }
 }
 
-- (void)commentTickAt:(NSDate *)now {
+- (void)commentTickWithPass:(FDScanPass *)pass now:(NSDate *)now {
     if (self->_commentStep == FDCommentNone) return;
     if ([now compare:self->_commentDeadline] == NSOrderedDescending) {
         self->_commentStep = FDCommentNone;
@@ -626,7 +609,7 @@ typedef NS_ENUM(NSInteger, FDCommentStep) {
     }
     switch (self->_commentStep) {
         case FDCommentOpening: {
-            UIView *field = [FDScanner firstTextFieldOrTextView];
+            UIView *field = pass.textField;
             if ([field isKindOfClass:UITextField.class]) {
                 ((UITextField *)field).text = [self commentTemplates].firstObject ?: @"真好啊";
                 self->_commentStep = FDCommentSending;
@@ -643,9 +626,8 @@ typedef NS_ENUM(NSInteger, FDCommentStep) {
             break;
         }
         case FDCommentSending: {
-            UIControl *send = [FDScanner findSendButton];
-            if (send) {
-                [send sendActionsForControlEvents:UIControlEventTouchUpInside];
+            if (pass.sendButton) {
+                [pass.sendButton sendActionsForControlEvents:UIControlEventTouchUpInside];
                 self->_commentStep = FDCommentNone;
                 FDLog(@"comment: sent");
             }
@@ -657,11 +639,17 @@ typedef NS_ENUM(NSInteger, FDCommentStep) {
 
 #pragma mark 直播间：抢福袋 + 互动 + 自动退出
 
-- (void)roomTickAt:(NSDate *)now {
+- (void)roomTickAt:(NSDate *)now commentActive:(BOOL)commentActive {
+    FDScanPass *pass = [FDScanPass new];
+    pass.textContains = [self entryKeywords];
+    pass.claimContains = @[@"参与", @"领取", @"抢福袋", @"立即抢"];
+    pass.a11yNeed = @[@"点赞", @"赞", @"评论"];
+    [FDScanner runPass:pass];
+
     // 直播间点赞：触发概率3%，一次点 2~10 次
     NSInteger roll = FDRand(1, 100);
     if ((double)roll <= FDNum(FDLiveActProbKey, 3)) {
-        UIView *like = [FDScanner firstAccessibleMatchWithContains:@[@"点赞", @"赞"] maxLen:8];
+        UIView *like = pass.a11yHits[@"点赞"] ?: pass.a11yHits[@"赞"];
         if (like) {
             NSInteger times = FDRand((NSInteger)FDNum(FDLiveLikeMinKey, 2), (NSInteger)FDNum(FDLiveLikeMaxKey, 10));
             for (NSInteger i = 0; i < times; i++) {
@@ -672,14 +660,14 @@ typedef NS_ENUM(NSInteger, FDCommentStep) {
             FDLog(@"room: like burst x%ld", (long)times);
         }
     }
-    // 直播间评论（概率沿用评论概率）
+    // 直播间评论（概率打折，避免太频繁）
     roll = FDRand(1, 100);
     if ((double)roll <= FDNum(FDPCommentKey, 20) * 0.15) {
-        [self startCommentSequence];
+        [self startCommentWithView:pass.a11yHits[@"评论"]];
     }
-    [self commentTickAt:now];
+    [self commentTickWithPass:pass now:now];
 
-    // 抢福袋两段式（原有逻辑）
+    // 抢福袋两段式
     NSTimeInterval cooldown = FDNum(FDCooldownKey, 20);
     if (self->_lastTrigger) {
         NSTimeInterval rest = cooldown - [now timeIntervalSinceDate:self->_lastTrigger];
@@ -696,7 +684,7 @@ typedef NS_ENUM(NSInteger, FDCommentStep) {
                 [self maybeLeaveRoomAt:now];
                 return;
             }
-            UIView *entry = [FDScanner firstVisibleMatchWithContains:[self entryKeywords] exact:@[] maxLen:20];
+            UIView *entry = pass.textHit;
             if (!entry) {
                 [self setStatus:@"直播间扫描中"];
                 [self maybeLeaveRoomAt:now];
@@ -714,18 +702,9 @@ typedef NS_ENUM(NSInteger, FDCommentStep) {
             break;
         }
         case FDStageInPanel: {
-            UIView *claim = [FDScanner firstVisibleMatchWithContains:@[@"参与", @"领取", @"抢福袋", @"立即抢"]
-                                                              exact:@[@"开"]
-                                                              maxLen:24];
+            UIView *claim = pass.claimHit;
             if (claim) {
                 NSString *claimText = ([claim isKindOfClass:UILabel.class] ? [(UILabel *)claim text] : @"");
-                if ([claimText hasPrefix:@"已"]) {
-                    self->_stage = FDStageScanning;
-                    self->_lastTrigger = [NSDate date];
-                    [self setStatus:@"已参与过 · 冷却中"];
-                    FDLog(@"state=AlreadyJoined");
-                    break;
-                }
                 FDLog(@"stage=InPanel claim=%@ text=%@", NSStringFromClass([claim class]), claimText ?: @"");
                 if ([FDTap tapView:claim]) {
                     self->_lastTrigger = [NSDate date];
