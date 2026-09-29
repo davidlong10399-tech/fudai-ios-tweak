@@ -1,6 +1,6 @@
 Package: com.fudai.ios
 Name: FuDai iOS
-Version: 0.5.0
+Version: 0.5.1
 Architecture: iphoneos-arm64e
 Description: Douyin lucky-bag helper (LuckyBox precise hooks + UI engine)
 Maintainer: local
