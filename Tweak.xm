@@ -493,7 +493,7 @@ typedef NS_ENUM(NSInteger, FDCommentStep) {
     if (limit > 0 && self->_dailyCount >= limit) { [self setStatus:@"今日上限已到"]; return; }
 
     // 上下文识别
-    NSString *cls = NSStringFromClass([FDTopVC class]);
+    NSString *cls = NSStringFromClass([FDTopVC() class]);
     BOOL inRoom = ([cls rangeOfString:@"Live" options:NSCaseInsensitiveSearch].location != NSNotFound);
     BOOL inFeed = (!inRoom && [cls rangeOfString:@"Feed" options:NSCaseInsensitiveSearch].location != NSNotFound);
     FDEngine engine = inRoom ? FDEngineRoom : (inFeed ? FDEngineFeed : FDEngineUnknown);
@@ -1031,14 +1031,12 @@ static void FDDumpRuntimeInfo(void);
     [sw addTarget:self action:@selector(switchChanged:) forControlEvents:UIControlEventValueChanged];
     sw.accessibilityIdentifier = key;
     [scroll addSubview:sw];
-    objc_setAssociatedObject(sw, @selector(on), key, OBJC_ASSOCIATION_RETAIN);
-    objc_setAssociatedObject(self, [NSString stringWithFormat:@"sw%@u", key], key, OBJC_ASSOCIATION_RETAIN);
     return y + 42;
 }
 
 - (void)switchChanged:(UISwitch *)sw {
-    NSString *key = objc_getAssociatedObject(sw, @selector(on));
-    if (!key) return;
+    NSString *key = sw.accessibilityIdentifier;
+    if (!key.length) return;
     [NSUserDefaults.standardUserDefaults setBool:sw.on forKey:key];
     if ([key isEqualToString:FDEnabledKey]) {
         if (sw.on) [[FDCoordinator shared] start]; else [[FDCoordinator shared] stop];
