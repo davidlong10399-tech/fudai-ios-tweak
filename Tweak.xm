@@ -302,7 +302,10 @@ static UIViewController *FDTopVC(void) {
             }
             if (!pass.feedScroll && [v isKindOfClass:UIScrollView.class]) {
                 UIScrollView *sv = (UIScrollView *)v;
+                // 必须是竖向分页容器（排除横向 tab 页容器）
                 if (sv.pagingEnabled &&
+                    sv.contentSize.height >= sv.bounds.size.height * 1.5 &&
+                    sv.contentSize.width <= sv.bounds.size.width * 1.5 &&
                     sv.bounds.size.height > screen.height * 0.75 &&
                     sv.bounds.size.width > screen.width * 0.8) {
                     pass.feedScroll = sv;
@@ -583,10 +586,85 @@ typedef NS_ENUM(NSInteger, FDCommentStep) {
 
 - (void)scrollFeedNextWith:(UIScrollView *)sv {
     if (!sv) { FDLog(@"feed: paging scroll not found"); return; }
+
+    // 1) 优先调抖音自己的"下一个视频"方法（播放器切换由 App 自己处理，黑屏根因是强滚不触发播放器切换）
+    UIViewController *top = FDTopVC();
+    SEL nextSel = [self nextVideoSelectorForTopVC:top];
+    if (nextSel) {
+        @try {
+            #pragma clang diagnostic push
+            #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+            [top performSelector:nextSel];
+            #pragma clang diagnostic pop
+            FDLog(@"feed: called app next-video method %@ on %@", NSStringFromSelector(nextSel), NSStringFromClass([top class]));
+            return;
+        } @catch (NSException *e) {
+            FDLog(@"feed: next-video method exception %@", e);
+        }
+    }
+
+    // 2) UICollectionView 自己的滚动 API（走正规回调链）
+    if ([sv isKindOfClass:UICollectionView.class]) {
+        UICollectionView *cv = (UICollectionView *)sv;
+        @try {
+            NSInteger page = (NSInteger)round(sv.contentOffset.y / MAX(sv.bounds.size.height, 1));
+            NSInteger n = [cv numberOfItemsInSection:0];
+            NSInteger target = page + 1;
+            if (target < n) {
+                NSIndexPath *ip = [NSIndexPath indexPathForItem:target inSection:0];
+                [cv scrollToItemAtIndexPath:ip atScrollPosition:UICollectionViewScrollPositionTop animated:YES];
+                FDLog(@"feed: scrollToItem index=%ld (of %ld)", (long)target, (long)n);
+                return;
+            }
+        } @catch (NSException *e) {
+            FDLog(@"feed: scrollToItem exception %@", e);
+        }
+    }
+
+    // 3) 兜底：直接强滚（可能黑屏，仅保底）
     CGPoint off = sv.contentOffset;
     off.y += sv.bounds.size.height;
     [sv setContentOffset:off animated:YES];
-    FDLog(@"feed: scrolled to y=%.0f", off.y);
+    FDLog(@"feed: fallback scrolled to y=%.0f", off.y);
+}
+
+// 在推荐页 VC（及其父类）里找"下一个视频"方法，找到后按类名缓存
+- (SEL)nextVideoSelectorForTopVC:(UIViewController *)top {
+    static NSMutableDictionary<NSString *, NSValue *> *cache = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ cache = [NSMutableDictionary dictionary]; });
+    if (!top) return NULL;
+    NSString *clsName = NSStringFromClass([top class]);
+    NSValue *cached = cache[clsName];
+    if (cached) return cached.selectorValue;
+
+    SEL found = NULL;
+    Class cls = [top class];
+    for (int depth = 0; depth < 3 && cls && !found; depth++) {
+        unsigned int mcount = 0;
+        Method *methods = class_copyMethodList(cls, &mcount);
+        for (unsigned int i = 0; i < mcount; i++) {
+            SEL s = method_getName(methods[i]);
+            NSString *name = NSStringFromSelector(s);
+            if (name.length > 20) continue; // 只要无参短方法
+            NSString *lower = [name lowercaseString];
+            if ([lower containsString:@"next"] &&
+                ([lower hasPrefix:@"scroll"] || [lower hasPrefix:@"feed"] || [lower hasPrefix:@"go"] ||
+                 [lower hasPrefix:@"move"] || [lower hasPrefix:@"play"] || [lower hasPrefix:@"to"] ||
+                 [lower hasPrefix:@"didclick"] || [lower containsString:@"tonext"])) {
+                if ([top respondsToSelector:s]) { found = s; break; }
+            }
+        }
+        free(methods);
+        cls = class_getSuperclass(cls);
+    }
+    if (found) {
+        cache[clsName] = [NSValue valueWithPointer:found];
+        FDLog(@"feed: next-video selector found: %@", NSStringFromSelector(found));
+    } else {
+        FDLog(@"feed: no next-video selector on %@", clsName);
+    }
+    return found;
 }
 
 #pragma mark 评论序列（跨 tick 状态机）
