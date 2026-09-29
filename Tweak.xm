@@ -23,6 +23,9 @@
 - (void)stop;
 - (NSInteger)dailyCount;
 - (void)redPacketTapped;
+- (BOOL)canTriggerNow;
+- (void)noteLuckyBoxPanelOpened;
+- (void)luckyBoxSignalOnInstance:(id)manager reason:(NSString *)reason;
 @end
 
 static NSString * const FDEnabledKey    = @"fudai.enabled";
@@ -363,6 +366,48 @@ typedef NS_ENUM(NSInteger, FDStage) {
 
 - (void)redPacketTapped { self->_lastTrigger = [NSDate date]; }
 - (NSInteger)dailyCount { return self->_dailyCount; }
+
+// 0.5.0: 供 IESLiveLuckyBoxServiceManager hook 调用的精准触发通道
+- (BOOL)canTriggerNow {
+    if (!self->_running || !FDEnabled()) return NO;
+    if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) return NO;
+    NSDate *now = [NSDate date];
+    NSInteger limit = (NSInteger)FDNumber(FDDailyLimitKey, 30);
+    if (limit > 0 && self->_dailyCount >= limit) return NO;
+    if (self->_lastTrigger && [now timeIntervalSinceDate:self->_lastTrigger] < FDNumber(FDCooldownKey, 20)) return NO;
+    if (self->_lastEntryTap && [now timeIntervalSinceDate:self->_lastEntryTap] < 8.0) return NO;
+    return YES;
+}
+
+- (void)noteLuckyBoxPanelOpened {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        self->_stage = FDStageInPanel;
+        self->_panelDeadline = [NSDate dateWithTimeIntervalSinceNow:4.0];
+        [self setStatus:@"面板已开 · 找按钮"];
+        FDLog(@"state=InPanel reason=luckybox-manager");
+    });
+}
+
+- (void)luckyBoxSignalOnInstance:(id)manager reason:(NSString *)reason {
+    if (![self canTriggerNow]) return;
+    FDLog(@"luckybox signal reason=%@ manager=%@", reason, NSStringFromClass([manager class]));
+    NSTimeInterval delay = FDNumber(FDDelayKey, 0);
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * 60 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (![self canTriggerNow]) return;
+        SEL open = NSSelectorFromString(@"openGrabLuckyBoxView");
+        if (manager && [manager respondsToSelector:open]) {
+            self->_lastEntryTap = [NSDate date];
+            [self setStatus:@"发现福袋 · 开面板"];
+            #pragma clang diagnostic push
+            #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+            [manager performSelector:open];
+            #pragma clang diagnostic pop
+            FDLog(@"state=PanelOpenCalled");
+        } else {
+            FDLog(@"luckybox manager missing openGrabLuckyBoxView");
+        }
+    });
+}
 @end
 
 #pragma mark - 悬浮窗 + 设置面板
@@ -694,13 +739,33 @@ static void FDDumpRuntimeInfo(void);
 %end
 %end
 
-static BOOL gCompTapped, gCompOpen2, gCompOpen3, gDataFetch2, gDataFetch3, gLuckyCat;
+// 0.5.0: 直播福袋核心链路（类名来自 fudai_dump.txt 实测）
+// messageReceived: = 福袋 IM 消息；openGrabLuckyBoxView = 打开抢福袋面板
+%group GLuckyBoxManager
+%hook IESLiveLuckyBoxServiceManager
+- (void)messageReceived:(id)message {
+    %orig;
+    [[FDCoordinator shared] luckyBoxSignalOnInstance:self reason:@"messageReceived"];
+}
+- (void)createLuckyBoxShortTouchItem:(id)item aniViewData:(id)aniViewData isShowEntranceAnimation:(BOOL)animate {
+    %orig;
+    [[FDCoordinator shared] luckyBoxSignalOnInstance:self reason:@"entranceCreated"];
+}
+- (void)openGrabLuckyBoxView {
+    %orig;
+    [[FDCoordinator shared] noteLuckyBoxPanelOpened];
+}
+%end
+%end
+
+static BOOL gCompTapped, gCompOpen2, gCompOpen3, gDataFetch2, gDataFetch3, gLuckyCat, gLuckyBox;
 
 static void FDDumpRuntimeInfo(void) {
     @autoreleasepool {
         NSArray *keywords = @[@"RedPacket", @"redPacket", @"LuckyBag", @"luckyBag",
                               @"HongBao", @"hongbao", @"Packet", @"Lucky", @"Bag",
-                              @"Lottery", @"lottery", @"TreasureBox"];
+                              @"Lottery", @"lottery", @"TreasureBox",
+                              @"LuckyBox", @"luckyBox", @"Rush", @"rush", @"FuDai", @"fudai"];
         unsigned int count = 0;
         Class *classes = objc_copyClassList(&count);
         NSMutableString *out = [NSMutableString string];
@@ -764,6 +829,11 @@ static void FDInitHooks(void) {
         gLuckyCat = YES; %init(GLuckyCat);
         FDLog(@"hooked AWELuckyCatBannerView");
     }
+    Class lbm = NSClassFromString(@"IESLiveLuckyBoxServiceManager");
+    if (!gLuckyBox && lbm && [lbm instancesRespondToSelector:@selector(messageReceived:)]) {
+        gLuckyBox = YES; %init(GLuckyBoxManager);
+        FDLog(@"hooked IESLiveLuckyBoxServiceManager");
+    }
 }
 
 // 无条件写启动标记：不依赖 syslog 就能确认注入成功、偏好读取值和 hook 安装情况
@@ -777,12 +847,13 @@ static void FDWriteBootMarker(void) {
             [d objectForKey:FDEnabledKey] ?: @"<unset:default-NO>",
             [d objectForKey:FDDebugKey] ?: @"<unset:default-NO>"];
         [out appendFormat:@"keywords=%@\n", [d stringForKey:FDKeywordKey] ?: @"<unset>"];
-        [out appendFormat:@"hooks compTapped=%d open2=%d open3=%d fetch2=%d fetch3=%d lucky=%d\n",
-            gCompTapped, gCompOpen2, gCompOpen3, gDataFetch2, gDataFetch3, gLuckyCat];
-        [out appendFormat:@"classes comp=%@ dm=%@ lucky=%@\n",
+        [out appendFormat:@"hooks compTapped=%d open2=%d open3=%d fetch2=%d fetch3=%d lucky=%d luckyBox=%d\n",
+            gCompTapped, gCompOpen2, gCompOpen3, gDataFetch2, gDataFetch3, gLuckyCat, gLuckyBox];
+        [out appendFormat:@"classes comp=%@ dm=%@ lucky=%@ luckyBoxMgr=%@\n",
             NSClassFromString(@"AWEIMDouyinRedPacketComponent") ? @"FOUND" : @"MISSING",
             NSClassFromString(@"AWEIMDouyinRedPacketDataManager") ? @"FOUND" : @"MISSING",
-            NSClassFromString(@"AWELuckyCatBannerView") ? @"FOUND" : @"MISSING"];
+            NSClassFromString(@"AWELuckyCatBannerView") ? @"FOUND" : @"MISSING",
+            NSClassFromString(@"IESLiveLuckyBoxServiceManager") ? @"FOUND" : @"MISSING"];
         NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
         NSString *file = [paths.firstObject stringByAppendingPathComponent:@"fudai_boot.txt"];
         [out writeToFile:file atomically:YES encoding:NSUTF8StringEncoding error:nil];
