@@ -3,6 +3,7 @@
 #include <QuartzCore/QuartzCore.h>
 #include <stdarg.h>
 #include <dlfcn.h>
+#include <mach-o/dyld.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
 
