@@ -2,6 +2,7 @@
 #include <Foundation/Foundation.h>
 #include <QuartzCore/QuartzCore.h>
 #include <stdarg.h>
+#include <dlfcn.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
 
@@ -651,6 +652,9 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
         pass.a11yNeed = @[@"点赞", @"赞"];
     }
     [FDScanner runPass:pass];
+
+    static NSInteger sPollTick = 0;
+    if (++sPollTick % 30 == 1) FDLog(@"poll: page=%ld phase=%ld roomStage=%ld", (long)pass.page, (long)gFDPhase, (long)self->_roomStage);
 
     if (gFDPhase == FDPhaseBrowse) {
         [self browseTick:pass];
@@ -1487,7 +1491,7 @@ static BOOL FDAutoPlayGate(void) { return FDAutoPlayActive(); }
 %end
 %end
 
-static BOOL gAutoPlay1, gAutoPlay2, gAutoPlay3, gAutoPlay4, gObserveIM, gLuckyBox;
+static BOOL gAutoPlay1, gAutoPlay2, gAutoPlay3, gAutoPlay4, gObserveIM, gLuckyBox, gAutoPlayLogged;
 
 static void FDDumpRuntimeInfo(void) {
     @autoreleasepool {
@@ -1570,15 +1574,35 @@ static void FDInitHooks(void) {
     if (!gAutoPlay4 && NSClassFromString(@"AWEFeedModuleService")) {
         gAutoPlay4 = YES; %init(GAutoPlay4);
     }
-    if ((gAutoPlay1 || gAutoPlay2 || gAutoPlay3 || gAutoPlay4) &&
-        !(gAutoPlay1 && gAutoPlay2 && gAutoPlay3 && gAutoPlay4)) {
-        // 部分安装也继续；全部缺失时静默（老版本抖音类名不同）
+    if ((gAutoPlay1 || gAutoPlay2 || gAutoPlay3 || gAutoPlay4) && !gAutoPlayLogged) {
+        gAutoPlayLogged = YES;
+        FDLog(@"autoplay guard hooks installed (%d%d%d%d)", gAutoPlay1, gAutoPlay2, gAutoPlay3, gAutoPlay4);
     }
-    if (gAutoPlay3 || gAutoPlay4) FDLog(@"autoplay guard hooks installed (%d%d%d%d)", gAutoPlay1, gAutoPlay2, gAutoPlay3, gAutoPlay4);
 }
 
 %ctor {
     @autoreleasepool {
+        // ★ 多副本去重：克隆抖音里同时存在 内嵌副本(Frameworks) 与 substrate注入副本(/var/jb)，
+        //   两份 %ctor 都会跑 → 双引擎打架。只让最先加载的那份初始化。
+        @try {
+            Dl_info info;
+            if (dladdr((void *)&FDInitHooks, &info) && info.dli_fname) {
+                const char *selfPath = info.dli_fname;
+                BOOL selfIsFirst = NO;
+                uint32_t n = _dyld_image_count();
+                for (uint32_t i = 0; i < n; i++) {
+                    const char *p = _dyld_get_image_name(i);
+                    if (p && strstr(p, "FuDai.dylib")) {
+                        selfIsFirst = (strcmp(p, selfPath) == 0);
+                        break;
+                    }
+                }
+                if (!selfIsFirst) {
+                    NSLog(@"[FuDai] duplicate copy detected at %s, skipping init", selfPath);
+                    return;
+                }
+            }
+        } @catch (NSException *e) { }
         [NSUserDefaults.standardUserDefaults registerDefaults:@{
             FDEnabledKey: @NO,
             FDDebugKey: @NO,
