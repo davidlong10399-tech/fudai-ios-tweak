@@ -549,14 +549,15 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
     NSDateFormatter *fmt = [NSDateFormatter new];
     fmt.dateFormat = @"yyyy-MM-dd";
     NSString *today = [fmt stringFromDate:[NSDate date]];
-    if ([d stringForKey:FDCounterDateKey] != today) {
+    NSString *stored = [d stringForKey:FDCounterDateKey];
+    if (![today isEqualToString:stored]) {
         [d setObject:today forKey:FDCounterDateKey];
         [d setDouble:0 forKey:FDDiaAttendNKey];
         [d setDouble:0 forKey:FDDiaRewardNKey];
         [d setDouble:0 forKey:FDSupAttendNKey];
         [d setDouble:0 forKey:FDSupRewardNKey];
         [d setDouble:0 forKey:FDAttentionNKey];
-        FDLog(@"daily counters reset");
+        FDLog(@"daily counters reset to %@", today);
     }
 }
 
