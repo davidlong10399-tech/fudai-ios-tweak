@@ -254,6 +254,8 @@ typedef NS_ENUM(NSInteger, FDPage) {
 @property (nonatomic, strong) NSMutableDictionary<NSString *, UIView *> *a11yHits;
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSString *> *markerTexts; // marker → 完整文本
 @property (nonatomic, strong) NSMutableArray<NSString *> *panelTexts; // 面板数字/金额/倒计时文本
+@property (nonatomic, strong) UIView *textField;   // 评论输入框（发现即记录）
+@property (nonatomic, strong) UIControl *sendButton; // 发送按钮
 @property (nonatomic, assign) FDPage page;
 @property (nonatomic, assign) CFAbsoluteTime deadline;
 @end
@@ -408,6 +410,18 @@ static NSInteger FDParseSeconds(NSString *text) {
                             break;
                         }
                     }
+                }
+            }
+            if (!pass.textField && ([v isKindOfClass:UITextView.class] || [v isKindOfClass:UITextField.class])) {
+                pass.textField = v;
+            }
+            if (!pass.sendButton && [v isKindOfClass:UIControl.class]) {
+                UIControl *c = (UIControl *)v;
+                NSString *t = ([c isKindOfClass:UIButton.class] ? [(UIButton *)c currentTitle] : @"") ?: @"";
+                NSString *a2 = c.accessibilityLabel ?: @"";
+                if ([t rangeOfString:@"发送"].location != NSNotFound ||
+                    [a2 rangeOfString:@"发送"].location != NSNotFound) {
+                    pass.sendButton = c;
                 }
             }
             for (UIView *sub in [v.subviews reverseObjectEnumerator]) [stack addObject:sub];
@@ -624,7 +638,6 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
     [self flipPhaseIfNeeded];
 
     NSInteger mode = (NSInteger)FDNum(FDModeKey, 5);
-    BOOL commentActive = NO; // 0.7 无跨页评论序列（直播间评论一步完成）
 
     FDScanPass *pass = [FDScanPass new];
     if (gFDPhase == FDPhaseGrab) {
