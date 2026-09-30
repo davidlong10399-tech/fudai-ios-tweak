@@ -5,10 +5,14 @@
 #import <objc/runtime.h>
 #import <objc/message.h>
 
-// 0.6.0 全自动版：对照安卓版功能重写
-// 推荐页自动刷视频(看视频1~5s) + 按概率点赞/关注/主页/评论/收藏/分享
-// + 扫描到带"福袋"的直播间自动进入 + 精准福袋链路(LuckyBox) + UI点抢
-// + 过滤(抖币价值/房间人数) + 定时养号 + 抢完自动退出循环
+// ============================================================================
+// 0.7.0 全自动引擎——基于两份深度逆向的完全重写
+//   刷视频(Browse)：抖音优化 28.52 同款 5 门卫 hook，让抖音原生自动连播接管
+//                   （docs/sjj-2852-analysis.md §4，照抄最小清单）
+//   抢福袋(Grab)：安卓福袋助手 DyAct 链路照抄
+//                   （docs/android-fudai-analysis.md §4.5-4.9）
+//   三段定时状态机：Grab(60min)→Browse(10min)→Rest(0)→循环；养号=永远 Browse
+// ============================================================================
 
 @interface FDFloatingController : NSObject
 + (instancetype)shared;
@@ -23,42 +27,50 @@
 - (void)start;
 - (void)stop;
 - (NSInteger)dailyCount;
-- (void)redPacketTapped;
-- (BOOL)canTriggerNow;
-- (void)noteLuckyBoxPanelOpened;
-- (void)luckyBoxSignalOnInstance:(id)manager reason:(NSString *)reason;
+- (void)noteLuckySignalOnInstance:(id)manager;
 - (void)noteRoomModel:(id)roomModel;
 - (void)noteDiamondFromManager:(id)manager;
-- (void)noteLuckySignal;
 @end
 
-#pragma mark - 配置键（对照安卓版设置项）
+#pragma mark - 配置（对齐安卓 MyConfig 语义）
 
-static NSString * const FDEnabledKey        = @"fudai.enabled";
-static NSString * const FDDebugKey          = @"fudai.debug";
-static NSString * const FDKeywordKey        = @"fudai.keywords";
-static NSString * const FDBrowseKey         = @"fudai.browse";
-static NSString * const FDWatchMinKey       = @"fudai.watchMin";
-static NSString * const FDWatchMaxKey       = @"fudai.watchMax";
-static NSString * const FDGapMinKey         = @"fudai.gapMin";
-static NSString * const FDGapMaxKey         = @"fudai.gapMax";
-static NSString * const FDPLikeKey          = @"fudai.pLike";
-static NSString * const FDPFollowKey        = @"fudai.pFollow";
-static NSString * const FDPProfileKey       = @"fudai.pProfile";
-static NSString * const FDPCommentKey       = @"fudai.pComment";
-static NSString * const FDPFavKey           = @"fudai.pFav";
-static NSString * const FDPShareKey         = @"fudai.pShare";
-static NSString * const FDLiveLikeMinKey    = @"fudai.liveLikeMin";
-static NSString * const FDLiveLikeMaxKey    = @"fudai.liveLikeMax";
-static NSString * const FDLiveActProbKey    = @"fudai.liveActProb";
-static NSString * const FDMinCoinsKey       = @"fudai.minCoins";
-static NSString * const FDMaxRoomKey        = @"fudai.maxRoomSize";
-static NSString * const FDFilterRoomKey     = @"fudai.filterRoom";
-static NSString * const FDNurtureKey        = @"fudai.nurtureMinutes";
-static NSString * const FDCommentsKey       = @"fudai.comments";
-static NSString * const FDDelayKey          = @"fudai.delayMinutes";
-static NSString * const FDCooldownKey       = @"fudai.cooldownSeconds";
-static NSString * const FDDailyLimitKey     = @"fudai.dailyLimit";
+static NSString * const FDEnabledKey      = @"fudai.enabled";
+static NSString * const FDDebugKey        = @"fudai.debug";
+static NSString * const FDAutoplayKey     = @"fudai.autoplay";
+static NSString * const FDModeKey         = @"fudai.mode";            // 0超级 1抖币 2关注 3养号 4手动 5钻石+超级
+static NSString * const FDGrabMinKey      = @"fudai.grabMinutes";     // 抢福袋时长(分)
+static NSString * const FDBrowseMinKey    = @"fudai.browseMinutes";   // 刷视频时长(分)
+static NSString * const FDRestMinKey      = @"fudai.restMinutes";     // 休息时长(分)
+static NSString * const FDDiaAttendKey    = @"fudai.diamondAttendLimit";
+static NSString * const FDDiaRewardKey    = @"fudai.diamondRewardLimit";
+static NSString * const FDDiaLimitMinKey  = @"fudai.diamondLimitMin";
+static NSString * const FDSupAttendKey    = @"fudai.supperAttendLimit";
+static NSString * const FDSupLimitMinKey  = @"fudai.supperLimitMin";
+static NSString * const FDMinSuperKey     = @"fudai.minSuperYuan";
+static NSString * const FDMaxSuperKey     = @"fudai.maxSuperYuan";
+static NSString * const FDMaxRoomKey      = @"fudai.maxRoomSize";
+static NSString * const FDFilterRoomKey   = @"fudai.filterRoom";
+static NSString * const FDWaitRoomKey     = @"fudai.waitNextRoomSec";
+static NSString * const FDMaxSwitchKey    = @"fudai.maxRoomSwitch";
+static NSString * const FDLikeRateKey     = @"fudai.liveLikeRate";
+static NSString * const FDLikeMinKey      = @"fudai.liveLikeMin";
+static NSString * const FDLikeMaxKey      = @"fudai.liveLikeMax";
+static NSString * const FDCmtRateKey      = @"fudai.liveCommentRate";
+static NSString * const FDCommentsKey     = @"fudai.comments";
+static NSString * const FDSearchKey       = @"fudai.searchKey";
+static NSString * const FDAttendModeKey   = @"fudai.attendMode";      // 6=立马
+static NSString * const FDFansTeamKey     = @"fudai.fansTeam";
+static NSString * const FDFansYuanKey     = @"fudai.fansTeamYuan";
+
+static NSString * const FDPhaseKey        = @"fudai.phase";           // 0Grab 1Browse 2Rest
+static NSString * const FDPhaseDlKey      = @"fudai.phaseDeadline";   // 翻转时刻(timeIntervalSince1970)
+// 每日计数器（date 变更清零）
+static NSString * const FDCounterDateKey  = @"fudai.counterDate";
+static NSString * const FDDiaAttendNKey   = @"fudai.diaAttendN";
+static NSString * const FDDiaRewardNKey   = @"fudai.diaRewardN";
+static NSString * const FDSupAttendNKey   = @"fudai.supAttendN";
+static NSString * const FDSupRewardNKey   = @"fudai.supRewardN";
+static NSString * const FDAttentionNKey   = @"fudai.attentionN";
 
 static BOOL FDEnabled(void) {
     NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
@@ -77,20 +89,22 @@ static NSString *FDStr(NSString *key, NSString *fallback) {
     return (v.length ? v : fallback);
 }
 
+static BOOL FDBool(NSString *key, BOOL fallback) {
+    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+    if ([d objectForKey:key] == nil) [d setBool:fallback forKey:key];
+    return [d boolForKey:key];
+}
+
 static void FDLog(NSString *format, ...) {
     if (![NSUserDefaults.standardUserDefaults boolForKey:FDDebugKey]) return;
     va_list args; va_start(args, format);
     NSString *message = [[NSString alloc] initWithFormat:format arguments:args];
     va_end(args);
     NSLog(@"[FuDai] %@", message);
-    // 落盘到 Documents/fudai_log.txt，便于 SSH 拉取诊断
     @try {
         static NSDateFormatter *fmt = nil;
         static dispatch_once_t once;
-        dispatch_once(&once, ^{
-            fmt = [NSDateFormatter new];
-            fmt.dateFormat = @"HH:mm:ss";
-        });
+        dispatch_once(&once, ^{ fmt = [NSDateFormatter new]; fmt.dateFormat = @"HH:mm:ss"; });
         NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
         NSString *file = [paths.firstObject stringByAppendingPathComponent:@"fudai_log.txt"];
         NSFileManager *fm = [NSFileManager defaultManager];
@@ -98,21 +112,27 @@ static void FDLog(NSString *format, ...) {
         if (attrs && [attrs fileSize] > 200000) [fm removeItemAtPath:file error:nil];
         NSString *line = [NSString stringWithFormat:@"%@ %@\n", [fmt stringFromDate:[NSDate date]], message];
         NSFileHandle *fh = [NSFileHandle fileHandleForWritingAtPath:file];
-        if (!fh) {
-            [line writeToFile:file atomically:YES encoding:NSUTF8StringEncoding error:nil];
-            return;
-        }
+        if (!fh) { [line writeToFile:file atomically:YES encoding:NSUTF8StringEncoding error:nil]; return; }
         [fh seekToEndOfFile];
         [fh writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
         [fh closeFile];
-    } @catch (NSException *e) {
-        // 日志失败不影响主流程
-    }
+    } @catch (NSException *e) { }
 }
 
 static NSInteger FDRand(NSInteger min, NSInteger max) {
     if (max < min) max = min;
     return min + (NSInteger)(arc4random_uniform((uint32_t)(max - min + 1)));
+}
+
+static void FDNumIncrement(NSString *key);
+
+// 自动连播生效条件（门卫 hook 读取）：总开 && Browse 阶段 && 自动播放开
+static volatile NSInteger gFDPhase = 0; // 0Grab 1Browse 2Rest（与 poll 同步，hook 直读）
+static BOOL FDAutoPlayActive(void) {
+    return FDEnabled() &&
+           FDBool(FDAutoplayKey, YES) &&
+           gFDPhase == 1 &&
+           UIApplication.sharedApplication.applicationState == UIApplicationStateActive;
 }
 
 #pragma mark - 点击工具
@@ -135,13 +155,9 @@ static BOOL FDInvokeGestureTargets(UIGestureRecognizer *gr) {
                     #pragma clang diagnostic pop
                     fired = YES;
                 }
-            } @catch (NSException *e) {
-                FDLog(@"tap: gesture exception %@", e);
-            }
+            } @catch (NSException *e) { }
         }
-    } @catch (NSException *e) {
-        FDLog(@"tap: targets exception %@", e);
-    }
+    } @catch (NSException *e) { }
     return fired;
 }
 
@@ -158,7 +174,7 @@ static BOOL FDInvokeGestureTargets(UIGestureRecognizer *gr) {
                 UIControl *c = (UIControl *)v;
                 if (c.enabled && c.userInteractionEnabled && !c.hidden && c.alpha > 0.1) {
                     [c sendActionsForControlEvents:UIControlEventTouchUpInside];
-                    FDLog(@"tap: UIControl %@ level=%d", NSStringFromClass([c class]), level);
+                    FDLog(@"tap: UIControl %@ L%d", NSStringFromClass([c class]), level);
                     return YES;
                 }
             }
@@ -171,32 +187,19 @@ static BOOL FDInvokeGestureTargets(UIGestureRecognizer *gr) {
             }
             if ([v respondsToSelector:@selector(accessibilityActivate)]) {
                 if (((BOOL (*)(id, SEL))objc_msgSend)(v, @selector(accessibilityActivate))) {
-                    FDLog(@"tap: accessibilityActivate %@", NSStringFromClass([v class]));
+                    FDLog(@"tap: a11yActivate %@", NSStringFromClass([v class]));
                     return YES;
                 }
             }
-        } @catch (NSException *e) {
-            FDLog(@"tap: level %d exception %@", level, e);
-        }
+        } @catch (NSException *e) { }
         v = v.superview;
     }
-    FDLog(@"tap: no tappable target for %@", NSStringFromClass([view class]));
+    FDLog(@"tap: no target %@", NSStringFromClass([view class]));
     return NO;
 }
 @end
 
-#pragma mark - 视图扫描（单次合并扫描 + 时间预算，防主线程卡死）
-
-static BOOL FDTextMatches(NSString *text, NSArray<NSString *> *contains, NSArray<NSString *> *exact, NSInteger maxLen) {
-    if (![text isKindOfClass:NSString.class] || text.length == 0 || (NSInteger)text.length > maxLen) return NO;
-    for (NSString *e in exact) {
-        if ([text compare:e options:NSCaseInsensitiveSearch] == NSOrderedSame) return YES;
-    }
-    for (NSString *c in contains) {
-        if ([text rangeOfString:c].location != NSNotFound) return YES;
-    }
-    return NO;
-}
+#pragma mark - 页面判定 + 扫描（单次合并 pass + 80ms 时限）
 
 static UIWindow *FDKeyWindow(void) {
     for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
@@ -228,17 +231,30 @@ static UIViewController *FDTopVC(void) {
     return vc;
 }
 
-// 一次遍历同时收集所有需要的目标；80ms 硬时限 + 1200 节点上限，超时立即中止
+// 页面判据（对齐安卓 getWndState，a11y 文本）
+static NSArray<NSString *> *FDPageMarkers(void) {
+    return @[@"在线观众", @"本场点赞", @"点赞，喜欢", @"点击进入直播间", @"我的钱包", @"抖音号："];
+}
+
+typedef NS_ENUM(NSInteger, FDPage) {
+    FDPageUnknown = 0, FDPageLive = 1, FDPageVideo = 2, FDPagePlaza = 3,
+    FDPageMenu = 4, FDPageUser = 5,
+};
+
 @interface FDScanPass : NSObject
-@property (nonatomic, copy) NSArray<NSString *> *textContains;   // 福袋关键字（UILabel 文字）
-@property (nonatomic, copy) NSArray<NSString *> *claimContains;  // 参与/领取类（UILabel 文字）
-@property (nonatomic, copy) NSArray<NSString *> *a11yNeed;       // 需要的辅助功能按钮（accessibilityLabel）
-@property (nonatomic, strong) UIView *textHit;
+@property (nonatomic, copy) NSArray<NSString *> *bagContains;   // 福袋挂件（限左上区域）
+@property (nonatomic, copy) NSArray<NSString *> *claimContains; // 面板按钮（参与类）
+@property (nonatomic, copy) NSArray<NSString *> *giveupContains;// 面板放弃条件
+@property (nonatomic, strong) UIView *giveupHit;
+@property (nonatomic, copy) NSArray<NSString *> *cleanupContains; // 弹窗按钮
+@property (nonatomic, copy) NSArray<NSString *> *a11yNeed;
+@property (nonatomic, strong) UIView *bagHit;
 @property (nonatomic, strong) UIView *claimHit;
+@property (nonatomic, strong) UIView *cleanupHit;
 @property (nonatomic, strong) NSMutableDictionary<NSString *, UIView *> *a11yHits;
-@property (nonatomic, strong) UIView *textField;
-@property (nonatomic, strong) UIControl *sendButton;
-@property (nonatomic, strong) UIScrollView *feedScroll;
+@property (nonatomic, strong) NSMutableDictionary<NSString *, NSString *> *markerTexts; // marker → 完整文本
+@property (nonatomic, strong) NSMutableArray<NSString *> *panelTexts; // 面板数字/金额/倒计时文本
+@property (nonatomic, assign) FDPage page;
 @property (nonatomic, assign) CFAbsoluteTime deadline;
 @end
 
@@ -246,14 +262,58 @@ static UIViewController *FDTopVC(void) {
 - (instancetype)init {
     if ((self = [super init])) {
         _a11yHits = [NSMutableDictionary dictionary];
+        _markerTexts = [NSMutableDictionary dictionary];
+        _panelTexts = [NSMutableArray array];
+        _page = FDPageUnknown;
         _deadline = CFAbsoluteTimeGetCurrent() + 0.08;
     }
     return self;
 }
 @end
 
+static BOOL FDTextContains(NSString *text, NSArray<NSString *> *keys, NSInteger maxLen) {
+    if (![text isKindOfClass:NSString.class] || text.length == 0 || (NSInteger)text.length > maxLen) return NO;
+    for (NSString *k in keys) {
+        if ([text rangeOfString:k].location != NSNotFound) return YES;
+    }
+    return NO;
+}
+
+static void FDNoteMarker(FDScanPass *pass, NSString *marker, NSString *full) {
+    if (!pass.markerTexts[marker]) pass.markerTexts[marker] = full;
+    if ([marker isEqualToString:@"在线观众"] || [marker isEqualToString:@"本场点赞"]) {
+        if (pass.page == FDPageUnknown) pass.page = FDPageLive;
+    } else if ([marker isEqualToString:@"点赞，喜欢"]) {
+        if (pass.page == FDPageUnknown) pass.page = FDPageVideo;
+    } else if ([marker isEqualToString:@"点击进入直播间"]) {
+        pass.page = FDPagePlaza; // 广场判据最明确
+    } else if ([marker isEqualToString:@"我的钱包"]) {
+        if (pass.page == FDPageUnknown) pass.page = FDPageMenu;
+    } else if ([marker isEqualToString:@"抖音号："]) {
+        if (pass.page == FDPageUnknown) pass.page = FDPageUser;
+    }
+}
+
+// 解析 X分X秒 → 秒
+static NSInteger FDParseSeconds(NSString *text) {
+    if (![text isKindOfClass:NSString.class]) return 0;
+    NSRange m = [text rangeOfString:@"分"];
+    NSRange s = [text rangeOfString:@"秒"];
+    if (m.location == NSNotFound || s.location == NSNotFound || s.location < m.location) return 0;
+    NSString *mStr = [text substringWithRange:NSMakeRange(0, m.location)];
+    NSString *sStr = [text substringWithRange:NSMakeRange(m.location + 1, s.location - m.location - 1)];
+    NSCharacterSet *nonDigit = [[NSCharacterSet decimalDigitCharacterSet] invertedSet];
+    mStr = [[mStr componentsSeparatedByCharactersInSet:nonDigit] componentsJoinedByString:@""];
+    sStr = [[sStr componentsSeparatedByCharactersInSet:nonDigit] componentsJoinedByString:@""];
+    if (mStr.length == 0 && sStr.length == 0) return 0;
+    NSInteger mm = mStr.length ? mStr.integerValue : 0;
+    NSInteger ss = sStr.length ? sStr.integerValue : 0;
+    return mm * 60 + ss;
+}
+
 @interface FDScanner : NSObject
 + (void)runPass:(FDScanPass *)pass;
++ (UIScrollView *)fullPageVerticalScrollInTopVC;
 + (NSInteger)visibleNodeCount;
 @end
 
@@ -275,6 +335,9 @@ static UIViewController *FDTopVC(void) {
 
 + (void)runPass:(FDScanPass *)pass {
     CGSize screen = UIScreen.mainScreen.bounds.size;
+    // 福袋挂件区：左上角（对齐安卓 left<600,top<550 的比例版）
+    CGFloat regionW = screen.width * 0.5;
+    CGFloat regionH = screen.height * 0.35;
     for (UIWindow *w in [self scannableWindows]) {
         NSMutableArray *stack = [NSMutableArray arrayWithObject:w];
         NSInteger budget = 1200;
@@ -285,55 +348,66 @@ static UIViewController *FDTopVC(void) {
             budget--;
             if (![v isKindOfClass:UIView.class]) continue;
             if (v.hidden || v.alpha < 0.1) continue;
-            // 可见性：同 window 直接用 frame，免坐标换算
             CGRect fw = (v.window == w) ? v.frame : [v convertRect:v.bounds toView:w];
             CGRect vis = CGRectIntersection(fw, w.bounds);
             if (vis.size.width <= 4 || vis.size.height <= 4) continue;
 
-            if (pass.textContains && !pass.textHit && [v isKindOfClass:UILabel.class]) {
-                NSString *t = ((UILabel *)v).text;
-                if (FDTextMatches(t, pass.textContains, @[], 20)) pass.textHit = v;
+            // 页面判据（text 与 a11y 都查，不限尺寸）
+            NSString *a11y = v.accessibilityLabel;
+            for (NSString *marker in FDPageMarkers()) {
+                if (pass.markerTexts[marker]) continue;
+                if ([a11y rangeOfString:marker].location != NSNotFound) { FDNoteMarker(pass, marker, a11y); continue; }
+                if ([v isKindOfClass:UILabel.class]) {
+                    NSString *t = ((UILabel *)v).text;
+                    if ([t rangeOfString:marker].location != NSNotFound) FDNoteMarker(pass, marker, t);
+                }
             }
-            if (pass.claimContains && !pass.claimHit && [v isKindOfClass:UILabel.class]) {
+
+            // 福袋挂件：UILabel 文字，限左上区域
+            if (pass.bagContains && !pass.bagHit && [v isKindOfClass:UILabel.class]) {
                 NSString *t = ((UILabel *)v).text;
-                if (FDTextMatches(t, pass.claimContains, @[@"开"], 24) && ![t hasPrefix:@"已"]) pass.claimHit = v;
+                if (FDTextContains(t, pass.bagContains, 20) && fw.origin.x < regionW && fw.origin.y < regionH) {
+                    pass.bagHit = v;
+                }
             }
-            // a11y 按钮：只查小尺寸节点，避免命中巨型容器
-            if (pass.a11yNeed.count) {
-                CGSize sz = v.bounds.size;
-                if (sz.width < screen.width * 0.5 && sz.height < screen.height * 0.5) {
-                    NSString *a11y = v.accessibilityLabel;
-                    if (a11y.length > 0 && a11y.length <= 12) {
-                        for (NSString *need in pass.a11yNeed) {
-                            if (!pass.a11yHits[need] && [a11y rangeOfString:need].location != NSNotFound) {
-                                pass.a11yHits[need] = v;
-                                break;
-                            }
-                        }
+            // 面板按钮/放弃条件/弹窗（文字或 a11y，不限区域但限长度）
+            if (!pass.claimHit && pass.claimContains && FDTextContains(a11y, pass.claimContains, 24)) {
+                pass.claimHit = v;
+            } else if (!pass.claimHit && pass.claimContains && [v isKindOfClass:UILabel.class]) {
+                NSString *t = ((UILabel *)v).text;
+                if (FDTextContains(t, pass.claimContains, 24)) pass.claimHit = v;
+            }
+            if (!pass.giveupHit && pass.giveupContains) {
+                if (FDTextContains(a11y, pass.giveupContains, 24)) pass.giveupHit = v;
+                else if ([v isKindOfClass:UILabel.class] && FDTextContains(((UILabel *)v).text, pass.giveupContains, 24)) pass.giveupHit = v;
+            }
+            if (!pass.cleanupHit && pass.cleanupContains) {
+                if (FDTextContains(a11y, pass.cleanupContains, 12)) pass.cleanupHit = v;
+                else if ([v isKindOfClass:UILabel.class] && FDTextContains(((UILabel *)v).text, pass.cleanupContains, 12)) pass.cleanupHit = v;
+            }
+            // 面板数字文本（倒计时/人数/金额/开奖）
+            if ([v isKindOfClass:UILabel.class]) {
+                NSString *t = ((UILabel *)v).text;
+                if (t.length > 0 && t.length < 50 && pass.panelTexts.count < 24) {
+                    if ([t rangeOfString:@"参考价值"].location != NSNotFound ||
+                        [t rangeOfString:@"人已参加"].location != NSNotFound ||
+                        [t rangeOfString:@"后开奖"].location != NSNotFound ||
+                        FDParseSeconds(t) > 0 ||
+                        [t rangeOfString:@"¥"].location != NSNotFound) {
+                        [pass.panelTexts addObject:t];
                     }
                 }
             }
-            if (!pass.textField && ([v isKindOfClass:UITextView.class] || [v isKindOfClass:UITextField.class])) {
-                pass.textField = v;
-            }
-            if (!pass.sendButton && [v isKindOfClass:UIControl.class]) {
-                UIControl *c = (UIControl *)v;
-                NSString *t = ([c isKindOfClass:UIButton.class] ? [(UIButton *)c currentTitle] : @"") ?: @"";
-                NSString *a = c.accessibilityLabel ?: @"";
-                if ([t rangeOfString:@"发送"].location != NSNotFound ||
-                    [a rangeOfString:@"发送"].location != NSNotFound) {
-                    pass.sendButton = c;
-                }
-            }
-            if (!pass.feedScroll && [v isKindOfClass:UIScrollView.class]) {
-                UIScrollView *sv = (UIScrollView *)v;
-                // 必须是竖向分页容器（排除横向 tab 页容器）
-                if (sv.pagingEnabled &&
-                    sv.contentSize.height >= sv.bounds.size.height * 1.5 &&
-                    sv.contentSize.width <= sv.bounds.size.width * 1.5 &&
-                    sv.bounds.size.height > screen.height * 0.75 &&
-                    sv.bounds.size.width > screen.width * 0.8) {
-                    pass.feedScroll = sv;
+            // a11y 按钮
+            if (pass.a11yNeed.count) {
+                CGSize sz = v.bounds.size;
+                if (sz.width < screen.width * 0.5 && sz.height < screen.height * 0.5 && a11y.length > 0 && a11y.length <= 12) {
+                    for (NSString *need in pass.a11yNeed) {
+                        if (!pass.a11yHits[need] && [a11y rangeOfString:need].location != NSNotFound) {
+                            pass.a11yHits[need] = v;
+                            break;
+                        }
+                    }
                 }
             }
             for (UIView *sub in [v.subviews reverseObjectEnumerator]) [stack addObject:sub];
@@ -342,286 +416,7 @@ static UIViewController *FDTopVC(void) {
     }
 }
 
-+ (NSInteger)visibleNodeCount {
-    NSInteger budget = 1200;
-    NSInteger count = 0;
-    for (UIWindow *w in [self scannableWindows]) {
-        NSMutableArray *stack = [NSMutableArray arrayWithObject:w];
-        while (stack.count > 0 && budget > 0) {
-            UIView *v = stack.lastObject;
-            [stack removeLastObject];
-            budget--; count++;
-            for (UIView *sub in v.subviews) [stack addObject:sub];
-        }
-    }
-    return count;
-}
-@end
-
-#pragma mark - 协调器：全自动引擎
-
-typedef NS_ENUM(NSInteger, FDEngine) {
-    FDEngineUnknown = 0,
-    FDEngineFeed    = 1,   // 推荐页/关注页
-    FDEngineRoom    = 2,   // 直播间
-};
-
-typedef NS_ENUM(NSInteger, FDStage) {
-    FDStageScanning = 0,   // 找"福袋"入口
-    FDStageInPanel  = 1,   // 入口已点，找"参与/领取/开"
-};
-
-typedef NS_ENUM(NSInteger, FDCommentStep) {
-    FDCommentNone = 0,
-    FDCommentOpening = 1,  // 点了评论按钮等面板
-    FDCommentTyping = 2,   // 找输入框填模板
-    FDCommentSending = 3,  // 找发送按钮
-};
-
-@implementation FDCoordinator {
-    dispatch_source_t _timer;
-    NSInteger _dailyCount;
-    NSDate *_day;
-    NSDate *_lastTrigger;
-    NSDate *_lastEntryTap;
-    FDStage _stage;
-    NSDate *_panelDeadline;
-    NSString *_lastStatus;
-    BOOL _running;
-    // 引擎
-    FDEngine _engine;
-    NSDate *_nextBrowseAct;    // 下一次刷视频/互动时间
-    NSDate *_pendingScroll;    // 互动后延迟滚动
-    BOOL _engagedCurrentVideo;
-    NSDate *_nextCardScan;     // 寻找福袋节奏（安卓: 5秒）
-    NSDate *_lastLuckySignal;  // 最近一次福袋信号（hook）
-    NSDate *_nurtureDeadline;  // 定时养号截止
-    // 过滤器数据
-    long long _lastDiamondCount;
-    long long _roomSize;
-    // 评论序列
-    FDCommentStep _commentStep;
-    NSDate *_commentDeadline;
-    NSInteger _commentBurstLeft;
-}
-
-+ (instancetype)shared { static FDCoordinator *x; static dispatch_once_t once; dispatch_once(&once, ^{ x=[self new]; }); return x; }
-
-- (instancetype)init {
-    if ((self = [super init])) {
-        _day = [NSDate date];
-        _dailyCount = 0;
-        _stage = FDStageScanning;
-        _engine = FDEngineUnknown;
-    }
-    return self;
-}
-
-- (void)setStatus:(NSString *)status {
-    if ([status isEqualToString:self->_lastStatus]) return;
-    self->_lastStatus = status;
-    [[FDFloatingController shared] updateStatus:status];
-}
-
-- (void)start {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (self->_running) return;
-        self->_running = YES;
-        self->_stage = FDStageScanning;
-        self->_engine = FDEngineUnknown;
-        double nurture = FDNum(FDNurtureKey, 0);
-        if (nurture > 0) self->_nurtureDeadline = [NSDate dateWithTimeIntervalSinceNow:nurture * 60];
-        else self->_nurtureDeadline = nil;
-        [self schedulePoll];
-        [self setStatus:@"运行中"];
-        FDLog(@"state=Started nurture=%.0fmin", nurture);
-    });
-}
-
-- (void)stop {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        self->_running = NO;
-        if (self->_timer) { dispatch_source_cancel(self->_timer); self->_timer = nil; }
-        [self setStatus:@"已暂停"];
-        FDLog(@"state=Disabled");
-    });
-}
-
-- (void)schedulePoll {
-    if (!self->_running) return;
-    if (self->_timer) dispatch_source_cancel(self->_timer);
-    self->_timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
-    dispatch_source_set_timer(self->_timer, dispatch_time(DISPATCH_TIME_NOW, 1 * NSEC_PER_SEC), 1 * NSEC_PER_SEC, 200 * NSEC_PER_MSEC);
-    __weak typeof(self) weakSelf = self;
-    dispatch_source_set_event_handler(self->_timer, ^{ [weakSelf poll]; });
-    dispatch_resume(self->_timer);
-}
-
-- (NSArray<NSString *> *)entryKeywords {
-    NSMutableArray *list = [NSMutableArray array];
-    for (NSString *part in [FDStr(FDKeywordKey, @"福袋") componentsSeparatedByString:@","]) {
-        NSString *t = [part stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-        if (t.length) [list addObject:t];
-    }
-    return list;
-}
-
-- (NSArray<NSString *> *)commentTemplates {
-    NSMutableArray *list = [NSMutableArray array];
-    for (NSString *part in [FDStr(FDCommentsKey, @"真好啊/值得看这个/主播我看你直播好久了/666") componentsSeparatedByString:@"/"]) {
-        NSString *t = [part stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
-        if (t.length) [list addObject:t];
-    }
-    return list;
-}
-
-- (void)poll {
-    if (!self->_running || !FDEnabled()) return;
-    if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) return;
-    if ([[FDFloatingController shared] ownsKeyWindow]) return;
-
-    NSDate *now = [NSDate date];
-    if ([[NSCalendar currentCalendar] compareDate:now toDate:self->_day toUnitGranularity:NSCalendarUnitDay] != NSOrderedSame) {
-        self->_day = now; self->_dailyCount = 0;
-    }
-    NSInteger limit = (NSInteger)FDNum(FDDailyLimitKey, 30);
-    if (limit > 0 && self->_dailyCount >= limit) { [self setStatus:@"今日上限已到"]; return; }
-
-    // 上下文识别（零遍历成本）
-    NSString *cls = NSStringFromClass([FDTopVC() class]);
-    BOOL inRoom = ([cls rangeOfString:@"Live" options:NSCaseInsensitiveSearch].location != NSNotFound);
-    BOOL inFeed = (!inRoom && [cls rangeOfString:@"Feed" options:NSCaseInsensitiveSearch].location != NSNotFound);
-    FDEngine engine = inRoom ? FDEngineRoom : (inFeed ? FDEngineFeed : FDEngineUnknown);
-    static NSInteger sPollTick = 0;
-    if (++sPollTick % 30 == 1) FDLog(@"poll: top=%@ engine=%ld", cls, (long)engine);
-
-    if (engine != self->_engine) {
-        FDLog(@"engine -> %@ (top=%@)", inRoom ? @"Room" : (inFeed ? @"Feed" : @"?"), cls);
-        self->_engine = engine;
-        self->_engagedCurrentVideo = NO;
-        self->_nextBrowseAct = nil;
-        if (engine == FDEngineRoom) self->_lastLuckySignal = now;
-    }
-
-    BOOL nurturing = (self->_nurtureDeadline && [now compare:self->_nurtureDeadline] == NSOrderedAscending);
-    BOOL commentActive = (self->_commentStep != FDCommentNone);
-
-    if (engine == FDEngineFeed) {
-        [self feedTickAt:now nurturing:nurturing commentActive:commentActive];
-    } else if (engine == FDEngineRoom) {
-        [self roomTickAt:now commentActive:commentActive];
-    } else if (commentActive) {
-        // 评论面板打开时顶层VC是评论页，引擎显示 Unknown，仍要推进评论序列
-        FDScanPass *pass = [FDScanPass new];
-        [FDScanner runPass:pass];
-        [self commentTickWithPass:pass now:now];
-    }
-}
-
-#pragma mark 推荐页：刷视频 + 互动 + 找福袋直播间
-
-- (void)feedTickAt:(NSDate *)now nurturing:(BOOL)nurturing commentActive:(BOOL)commentActive {
-    BOOL cardDue = !nurturing && (!self->_nextCardScan || [now compare:self->_nextCardScan] == NSOrderedDescending);
-    BOOL engageDue = !self->_nextBrowseAct || [now compare:self->_nextBrowseAct] == NSOrderedDescending;
-    BOOL scrollDue = self->_pendingScroll && [now compare:self->_pendingScroll] != NSOrderedAscending;
-
-    // 空闲时刻：完全不扫描，主线程零负担
-    if (!cardDue && !engageDue && !scrollDue && !commentActive) {
-        if (nurturing) {
-            [self setStatus:[NSString stringWithFormat:@"定时养号中 · 剩 %.0f 分", [self->_nurtureDeadline timeIntervalSinceDate:now] / 60.0]];
-        } else {
-            [self setStatus:@"浏览推荐页"];
-        }
-        return;
-    }
-
-    FDScanPass *pass = [FDScanPass new];
-    if (cardDue) pass.textContains = [self entryKeywords];
-    if (engageDue) pass.a11yNeed = @[@"点赞", @"赞", @"关注", @"头像", @"收藏", @"分享", @"评论"];
-    [FDScanner runPass:pass];
-
-    // 找福袋直播间卡片（安卓"寻找福袋 5秒"节奏）
-    if (cardDue) {
-        self->_nextCardScan = [now dateByAddingTimeInterval:5.0];
-        if (pass.textHit) {
-            if ([FDTap tapView:pass.textHit]) {
-                self->_lastLuckySignal = now;
-                self->_stage = FDStageScanning;
-                [self setStatus:@"发现福袋直播 · 进入"];
-                FDLog(@"browse: live card tapped");
-                return;
-            }
-        }
-    }
-
-    // 评论序列推进
-    [self commentTickWithPass:pass now:now];
-
-    // 互动 + 滚动节奏（看视频1~5s，间隔1~3s）
-    if (engageDue) {
-        if (!self->_engagedCurrentVideo) {
-            self->_engagedCurrentVideo = YES;
-            [self rollFeedEngagementWithPass:pass];
-            self->_pendingScroll = [now dateByAddingTimeInterval:FDRand((NSInteger)FDNum(FDGapMinKey, 1), (NSInteger)FDNum(FDGapMaxKey, 3))];
-            return;
-        }
-        // 互动完毕且到点 → 滚下一个
-        [self scrollFeedNext];
-        self->_engagedCurrentVideo = NO;
-        self->_pendingScroll = nil;
-        self->_nextBrowseAct = [now dateByAddingTimeInterval:FDRand((NSInteger)FDNum(FDWatchMinKey, 1), (NSInteger)FDNum(FDWatchMaxKey, 5))];
-        if (!nurturing) [self setStatus:@"浏览推荐页"];
-        return;
-    }
-    if (scrollDue) {
-        [self scrollFeedNext];
-        self->_pendingScroll = nil;
-    }
-}
-
-- (void)rollFeedEngagementWithPass:(FDScanPass *)pass {
-    NSInteger roll = FDRand(1, 100);
-    if ((double)roll <= FDNum(FDPLikeKey, 35)) {
-        UIView *like = pass.a11yHits[@"点赞"] ?: pass.a11yHits[@"赞"];
-        if (like) { [FDTap tapView:like]; FDLog(@"feed: liked"); }
-    }
-    roll = FDRand(1, 100);
-    if ((double)roll <= FDNum(FDPFollowKey, 10)) {
-        UIView *follow = pass.a11yHits[@"关注"];
-        if (follow) { [FDTap tapView:follow]; FDLog(@"feed: followed"); }
-    }
-    roll = FDRand(1, 100);
-    if ((double)roll <= FDNum(FDPProfileKey, 10)) {
-        UIView *avatar = pass.a11yHits[@"头像"];
-        if (avatar) { [FDTap tapView:avatar]; FDLog(@"feed: profile"); }
-    }
-    roll = FDRand(1, 100);
-    if ((double)roll <= FDNum(FDPFavKey, 5)) {
-        UIView *fav = pass.a11yHits[@"收藏"];
-        if (fav) { [FDTap tapView:fav]; FDLog(@"feed: favorited"); }
-    }
-    roll = FDRand(1, 100);
-    if ((double)roll <= FDNum(FDPShareKey, 3)) {
-        UIView *share = pass.a11yHits[@"分享"];
-        if (share) { [FDTap tapView:share]; FDLog(@"feed: share panel"); }
-    }
-    roll = FDRand(1, 100);
-    if ((double)roll <= FDNum(FDPCommentKey, 20)) {
-        [self startCommentWithView:pass.a11yHits[@"评论"]];
-    }
-}
-
-- (void)scrollFeedNext {
-    UIScrollView *sv = [self feedScrollViewInTopVC];
-    if (!sv) {
-        FDLog(@"feed: no scroll view inside topVC %@", NSStringFromClass([FDTopVC() class]));
-        return;
-    }
-    [self advanceFeedStep:0 sv:sv];
-}
-
-// 只在推荐页 VC 自己的视图子树里找滚动容器（TableView/CollectionView 都认），避免猜错
-- (UIScrollView *)feedScrollViewInTopVC {
++ (UIScrollView *)fullPageVerticalScrollInTopVC {
     UIViewController *top = FDTopVC();
     if (!top || !top.viewIfLoaded) return nil;
     CGSize screen = UIScreen.mainScreen.bounds.size;
@@ -644,391 +439,650 @@ typedef NS_ENUM(NSInteger, FDCommentStep) {
     return nil;
 }
 
-// 带验证的切视频：每条路径调用后 0.9s 检查 contentOffset 是否真的移动，没动自动降级
-- (void)advanceFeedStep:(NSInteger)step sv:(UIScrollView *)sv {
-    CGPoint before = sv.contentOffset;
-    switch (step) {
-        case 0: {
-            // 路径1：抖音优化同款 scrollToNextVideo（连续失败3次后跳过，避免每轮浪费0.9s）
-            static NSInteger s2nFails = 0;
-            if (s2nFails < 3 && [self callScrollToNextVideoFrom:FDTopVC()]) {
-                __block NSInteger *fails = &s2nFails;
-                __weak typeof(self) ws = self;
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.9 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                    if (!ws) return;
-                    if (fabs(sv.contentOffset.y - before.y) > 60) {
-                        FDLog(@"feed: advanced via scrollToNextVideo");
-                    } else {
-                        (*fails)++;
-                        FDLog(@"feed: scrollToNextVideo no-op (%d/3), fallback", *fails);
-                        [ws advanceFeedStep:1 sv:sv];
-                    }
-                });
-                return;
-            }
-            [self advanceFeedStep:1 sv:sv];
-            return;
-        }
-        case 1: {
-            // 路径2：运行时发现的 next 选择器
-            UIViewController *top = FDTopVC();
-            SEL nextSel = [self nextVideoSelectorForTopVC:top];
-            if (nextSel) {
-                @try {
-                    #pragma clang diagnostic push
-                    #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-                    [top performSelector:nextSel];
-                    #pragma clang diagnostic pop
-                    [self verifyAdvance:step sv:sv from:before];
-                    return;
-                } @catch (NSException *e) {
-                    FDLog(@"feed: next-video method exception %@", e);
-                }
-            }
-            [self advanceFeedStep:2 sv:sv];
-            return;
-        }
-        case 2: {
-            // 路径3：Table/Collection 自己的滚动 API + 手动补发滚动结束回调
-            NSIndexPath *targetIp = nil;
-            @try {
-                if ([sv isKindOfClass:UITableView.class]) {
-                    UITableView *tv = (UITableView *)sv;
-                    CGFloat rh = MAX(sv.bounds.size.height, 1);
-                    NSInteger page = (NSInteger)round(sv.contentOffset.y / rh);
-                    NSInteger n = [tv numberOfRowsInSection:0];
-                    if (page + 1 < n) targetIp = [NSIndexPath indexPathForRow:page + 1 inSection:0];
-                    if (targetIp) [tv scrollToRowAtIndexPath:targetIp atScrollPosition:UITableViewScrollPositionTop animated:YES];
-                } else if ([sv isKindOfClass:UICollectionView.class]) {
-                    UICollectionView *cv = (UICollectionView *)sv;
-                    NSInteger page = (NSInteger)round(sv.contentOffset.y / MAX(sv.bounds.size.height, 1));
-                    NSInteger n = [cv numberOfItemsInSection:0];
-                    if (page + 1 < n) targetIp = [NSIndexPath indexPathForItem:page + 1 inSection:0];
-                    if (targetIp) [cv scrollToItemAtIndexPath:targetIp atScrollPosition:UICollectionViewScrollPositionTop animated:YES];
-                }
-            } @catch (NSException *e) {
-                FDLog(@"feed: scrollToRow/Item exception %@", e);
-            }
-            if (targetIp) {
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.55 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                    [self fireScrollEndFor:sv];
-                });
-                [self verifyAdvance:step sv:sv from:before];
-                return;
-            }
-            FDLog(@"feed: no row/item to scroll (page+1 out of range)");
-            [self advanceFeedStep:3 sv:sv];
-            return;
-        }
-        default: {
-            // 路径4：强滚 + 补发滚动结束回调
-            CGPoint off = sv.contentOffset;
-            off.y += sv.bounds.size.height;
-            [sv setContentOffset:off animated:NO];
-            [self fireScrollEndFor:sv];
-            FDLog(@"feed: fallback scrolled to y=%.0f + end callback", off.y);
-            return;
++ (NSInteger)visibleNodeCount {
+    NSInteger budget = 1200;
+    NSInteger count = 0;
+    for (UIWindow *w in [self scannableWindows]) {
+        NSMutableArray *stack = [NSMutableArray arrayWithObject:w];
+        while (stack.count > 0 && budget > 0) {
+            UIView *v = stack.lastObject;
+            [stack removeLastObject];
+            budget--; count++;
+            for (UIView *sub in v.subviews) [stack addObject:sub];
         }
     }
+    return count;
+}
+@end
+
+#pragma mark - 协调器
+
+typedef NS_ENUM(NSInteger, FDPhase) { FDPhaseGrab = 0, FDPhaseBrowse = 1, FDPhaseRest = 2 };
+typedef NS_ENUM(NSInteger, FDRoomStage) {
+    FDRoomScan = 0,      // 扫福袋挂件
+    FDRoomPanel = 1,     // 面板已开（抢/挂机）
+    FDRoomSwitchWait = 2,// 等待换房
+};
+
+@implementation FDCoordinator {
+    dispatch_source_t _timer;
+    NSString *_lastStatus;
+    BOOL _running;
+    // 房间状态
+    FDRoomStage _roomStage;
+    NSDate *_panelDeadline;      // 面板超时（普通10min/超级15min）
+    NSDate *_joinedDeadline;     // 挂机到开奖
+    NSDate *_claimedAt;          // 参与点击防重
+    NSString *_lastAnchorHint;   // 卡死检测（用状态文本近似）
+    NSInteger _noBagTicks;       // 连续无福袋 tick
+    NSInteger _roomSwitches;     // 换房计数（60 上限）
+    NSDate *_nextRoomSwitch;     // 换房冷却
+    NSDate *_nextEnterTry;       // 进房重试冷却
+    NSDate *_lastLuckySignal;    // LuckyBox hook 信号
+    BOOL _likedThisRoom;         // 本房已点赞
+    BOOL _commentedThisRoom;     // 本房已评论
+    BOOL _superLikeDone;         // 超级福袋挂机点赞已做
+    NSString *_panelJoinedMarker;// 已参与标记
+    long long _lastDiamond;
+    long long _roomSize;
+    NSInteger _unknownTicks;
+    NSInteger _bagType;          // 0普通 2超级（本次面板）
 }
 
-- (void)verifyAdvance:(NSInteger)step sv:(UIScrollView *)sv from:(CGPoint)before {
-    __weak UIScrollView *wsv = sv;
-    __weak typeof(self) ws = self;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.9 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        UIScrollView *s2 = wsv;
-        if (!s2 || !ws) return;
-        if (fabs(s2.contentOffset.y - before.y) > 60) {
-            FDLog(@"feed: advanced via step %ld (y=%.0f)", (long)step, s2.contentOffset.y);
-            return;
-        }
-        FDLog(@"feed: step %ld no movement, trying next", (long)step);
-        [ws advanceFeedStep:step + 1 sv:s2];
++ (instancetype)shared { static FDCoordinator *x; static dispatch_once_t once; dispatch_once(&once, ^{ x=[self new]; }); return x; }
+
+- (NSString *)statusText { return _lastStatus ?: @""; }
+- (NSInteger)dailyCount { return (NSInteger)(FDNum(FDDiaAttendNKey, 0) + FDNum(FDSupAttendNKey, 0)); }
+
+- (void)setStatus:(NSString *)status {
+    if ([status isEqualToString:self->_lastStatus]) return;
+    self->_lastStatus = status;
+    [[FDFloatingController shared] updateStatus:status];
+}
+
+- (void)start {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (self->_running) return;
+        self->_running = YES;
+        [self resetDailyCountersIfNeeded];
+        [self loadOrInitPhase];
+        [self schedulePoll];
+        [self setStatus:@"运行中"];
+        FDLog(@"started phase=%ld", (long)gFDPhase);
     });
 }
 
-// 手动补发滚动结束回调：抖音靠 scrollViewDidEndDecelerating 切换播放器（强滚黑屏的根因）
+- (void)stop {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        self->_running = NO;
+        if (self->_timer) { dispatch_source_cancel(self->_timer); self->_timer = nil; }
+        [self setStatus:@"已暂停"];
+    });
+}
+
+- (void)schedulePoll {
+    if (!self->_running) return;
+    if (self->_timer) dispatch_source_cancel(self->_timer);
+    self->_timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
+    dispatch_source_set_timer(self->_timer, dispatch_time(DISPATCH_TIME_NOW, 1 * NSEC_PER_SEC), 1 * NSEC_PER_SEC, 200 * NSEC_PER_MSEC);
+    __weak typeof(self) weakSelf = self;
+    dispatch_source_set_event_handler(self->_timer, ^{ [weakSelf poll]; });
+    dispatch_resume(self->_timer);
+}
+
+- (void)resetDailyCountersIfNeeded {
+    NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
+    NSDateFormatter *fmt = [NSDateFormatter new];
+    fmt.dateFormat = @"yyyy-MM-dd";
+    NSString *today = [fmt stringFromDate:[NSDate date]];
+    if ([d stringForKey:FDCounterDateKey] != today) {
+        [d setObject:today forKey:FDCounterDateKey];
+        [d setDouble:0 forKey:FDDiaAttendNKey];
+        [d setDouble:0 forKey:FDDiaRewardNKey];
+        [d setDouble:0 forKey:FDSupAttendNKey];
+        [d setDouble:0 forKey:FDSupRewardNKey];
+        [d setDouble:0 forKey:FDAttentionNKey];
+        FDLog(@"daily counters reset");
+    }
+}
+
+// 三段定时状态机（安卓 §4.2）
+- (void)loadOrInitPhase {
+    NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
+    NSInteger mode = (NSInteger)FDNum(FDModeKey, 5);
+    double grabMin = FDNum(FDGrabMinKey, 60);
+    if (mode == 3) grabMin = 0; // 养号：永远刷视频
+    NSInteger phase = (NSInteger)[d doubleForKey:FDPhaseKey];
+    double dl = [d doubleForKey:FDPhaseDlKey];
+    NSDate *now = [NSDate date];
+    if (phase < 0 || phase > 2 || (dl > 0 && [now timeIntervalSince1970] > dl)) {
+        // 到点翻转或初次
+        if (phase == 1 && grabMin > 0) { phase = 0; dl = now.timeIntervalSince1970 + grabMin * 60; }
+        else { phase = 1; dl = now.timeIntervalSince1970 + FDNum(FDBrowseMinKey, 10) * 60; }
+    }
+    if (dl <= 0) dl = now.timeIntervalSince1970 + 60;
+    [d setDouble:phase forKey:FDPhaseKey];
+    [d setDouble:dl forKey:FDPhaseDlKey];
+    gFDPhase = phase;
+}
+
+- (void)flipPhaseIfNeeded {
+    NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
+    NSInteger mode = (NSInteger)FDNum(FDModeKey, 5);
+    double grabMin = FDNum(FDGrabMinKey, 60);
+    if (mode == 3) grabMin = 0;
+    NSInteger phase = (NSInteger)[d doubleForKey:FDPhaseKey];
+    double dl = [d doubleForKey:FDPhaseDlKey];
+    NSDate *now = [NSDate date];
+    if ([now timeIntervalSince1970] < dl) return; // 未到点
+
+    if (phase == FDPhaseGrab) {
+        phase = FDPhaseBrowse;
+        dl = now.timeIntervalSince1970 + FDNum(FDBrowseMinKey, 10) * 60;
+        [self setStatus:@"阶段：刷视频"];
+        FDLog(@"phase -> Browse (%.0fmin)", FDNum(FDBrowseMinKey, 10));
+        // 若还在直播间，退回 feed
+        [self exitRoomToFeed];
+    } else if (phase == FDPhaseBrowse) {
+        if (FDNum(FDRestMinKey, 0) > 0) {
+            phase = FDPhaseRest;
+            dl = now.timeIntervalSince1970 + FDNum(FDRestMinKey, 0) * 60;
+            [self setStatus:@"阶段：休息"];
+            FDLog(@"phase -> Rest");
+        } else if (grabMin > 0) {
+            phase = FDPhaseGrab;
+            dl = now.timeIntervalSince1970 + grabMin * 60;
+            [self setStatus:@"阶段：抢福袋"];
+            FDLog(@"phase -> Grab");
+            self->_roomSwitches = 0;
+        } else {
+            phase = FDPhaseBrowse; // 养号
+            dl = now.timeIntervalSince1970 + 600;
+        }
+    } else { // Rest
+        if (grabMin > 0) {
+            phase = FDPhaseGrab;
+            dl = now.timeIntervalSince1970 + grabMin * 60;
+            [self setStatus:@"阶段：抢福袋"];
+            FDLog(@"phase -> Grab");
+            self->_roomSwitches = 0;
+        } else {
+            phase = FDPhaseBrowse;
+            dl = now.timeIntervalSince1970 + 600;
+        }
+    }
+    [d setDouble:phase forKey:FDPhaseKey];
+    [d setDouble:dl forKey:FDPhaseDlKey];
+    gFDPhase = phase;
+}
+
+- (void)poll {
+    if (!self->_running || !FDEnabled()) return;
+    if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) return;
+    if ([[FDFloatingController shared] ownsKeyWindow]) return;
+    [self resetDailyCountersIfNeeded];
+    [self flipPhaseIfNeeded];
+
+    NSInteger mode = (NSInteger)FDNum(FDModeKey, 5);
+    BOOL commentActive = NO; // 0.7 无跨页评论序列（直播间评论一步完成）
+
+    FDScanPass *pass = [FDScanPass new];
+    if (gFDPhase == FDPhaseGrab) {
+        pass.bagContains = @[@"福袋"];
+        pass.claimContains = @[@"参与抽奖", @"一键发表评论", @"去发表评论", @"立即参与", @"参与", @"立即抢"];
+        pass.giveupContains = @[@"粉丝团点亮且达到", @"转发", @"分享直播间", @"仅会员可参与", @"不满足参与条件", @"活动已经结束"];
+        pass.cleanupContains = @[@"我知道了", @"知道了", @"重新加载", @"领取奖品"];
+        pass.a11yNeed = @[@"点赞", @"赞", @"评论", @"关闭"];
+    } else {
+        pass.a11yNeed = @[@"点赞", @"赞"];
+    }
+    [FDScanner runPass:pass];
+
+    if (gFDPhase == FDPhaseBrowse) {
+        [self browseTick:pass];
+        return;
+    }
+    if (mode == 3) { [self setStatus:@"养号模式 · 刷视频中"]; return; }
+
+    // Grab 阶段
+    [self grabTick:pass];
+}
+
+#pragma mark Browse：原生自动连播（门卫 hook 生效），引擎只盯页面
+
+- (void)browseTick:(FDScanPass *)pass {
+    if (pass.page == FDPageLive) {
+        // Browse 期误入直播间 → 退回 feed
+        [self exitRoomToFeed];
+        [self setStatus:@"刷视频期 · 退出直播间"];
+        return;
+    }
+    [self setStatus:@"刷视频期 · 原生连播中"];
+}
+
+#pragma mark Grab：进房 + 房内循环 + 抢
+
+- (void)grabTick:(FDScanPass *)pass {
+    FDLog(@"grab: page=%ld bag=%d claim=%d cleanup=%d markers=%@",
+          (long)pass.page, pass.bagHit != nil, pass.claimHit != nil, pass.cleanupHit != nil,
+          pass.markerTexts.allKeys);
+
+    // 1) 弹窗/开奖结果优先（安卓 closeRegBagNote）
+    if (pass.cleanupHit) {
+        NSString *txt = pass.cleanupHit.accessibilityLabel ?: @"";
+        if ([txt rangeOfString:@"领取奖品"].location != NSNotFound) {
+            [self noteReward:txt];
+        } else {
+            FDLog(@"room: popup cleanup");
+        }
+        [FDTap tapView:pass.cleanupHit];
+        self->_noBagTicks = 0;
+        return;
+    }
+
+    // 2) 页面路由
+    if (pass.page == FDPagePlaza) {
+        UIView *card = nil;
+        for (NSString *m in pass.markerTexts) {
+            if ([m isEqualToString:@"点击进入直播间"]) { card = pass.a11yHits[@"card"] ?: pass.claimHit; break; }
+        }
+        // 广场：直接点"点击进入直播间"所在卡
+        UIView *plazaHint = [self findPlazaCardHint];
+        UIView *target = plazaHint ?: card;
+        if (target && (!self->_nextEnterTry || [NSDate date] >= self->_nextEnterTry)) {
+            self->_nextEnterTry = [NSDate dateWithTimeIntervalSinceNow:8.0];
+            if ([FDTap tapView:target]) {
+                [self setStatus:@"直播广场 · 进房"];
+                FDLog(@"plaza: card tapped");
+            }
+        }
+        return;
+    }
+    if (pass.page == FDPageVideo || pass.page == FDPageMenu || pass.page == FDPageUser || pass.page == FDPageUnknown) {
+        [self enterRoomFromFeed];
+        return;
+    }
+
+    // 3) Live 页：房内主循环
+    [self roomTick:pass];
+}
+
+- (UIView *)findPlazaCardHint {
+    // 直播广场卡片提示"点击进入直播间"——在 pass 里没直接存 view，这里轻量复查（复用 deadline 机制）
+    FDScanPass *p = [FDScanPass new];
+    p.claimContains = @[@"点击进入直播间"];
+    p.deadline = CFAbsoluteTimeGetCurrent() + 0.06;
+    [FDScanner runPass:p];
+    return p.claimHit;
+}
+
+- (void)enterRoomFromFeed {
+    if (self->_nextEnterTry && [NSDate date] < self->_nextEnterTry) return;
+    self->_nextEnterTry = [NSDate dateWithTimeIntervalSinceNow:8.0];
+    // ① 直播 tab：a11y 以 "直播，" 开头（安卓同款判据）
+    UIView *tab = [self findLiveTab];
+    if (tab) {
+        if ([FDTap tapView:tab]) {
+            [self setStatus:@"进房：切直播 tab"];
+            FDLog(@"enter: live tab tapped");
+            return;
+        }
+    }
+    // ② 深链搜索（fudai.searchKey）
+    NSString *key = FDStr(FDSearchKey, @"带货直播间");
+    FDLog(@"enter: live tab not found, try search '%@'", key);
+    // iOS 标准版 search 深链未验证，先回 feed 兜底
+    [self exitRoomToFeed];
+}
+
+- (UIView *)findLiveTab {
+    FDScanPass *p = [FDScanPass new];
+    p.claimContains = @[@"直播，"];
+    p.deadline = CFAbsoluteTimeGetCurrent() + 0.05;
+    [FDScanner runPass:p];
+    UIView *hit = p.claimHit;
+    if (hit) {
+        NSString *s = hit.accessibilityLabel ?: @"";
+        if ([s hasPrefix:@"直播，"]) return hit; // 底部/顶部 tab 的 a11y 形如 "直播，按钮"
+    }
+    return nil;
+}
+
+- (void)roomTick:(FDScanPass *)pass {
+    if (self->_roomStage == FDRoomSwitchWait) return; // 换房进行中，等 doRoomSwitch
+    // 弹窗清理由 grabTick 完成（cleanup 优先），这里处理福袋
+    if (pass.bagHit) {
+        self->_noBagTicks = 0;
+        NSString *bagText = ([pass.bagHit isKindOfClass:UILabel.class] ? [(UILabel *)pass.bagHit text] : @"") ?: @"";
+        // 人数过滤
+        NSString *aud = pass.markerTexts[@"在线观众"];
+        if (aud.length && FDBool(FDFilterRoomKey, NO)) {
+            long long cnt = [self parseAudienceCount:aud];
+            if (cnt > 0 && cnt > (long long)FDNum(FDMaxRoomKey, 200000)) {
+                [self setStatus:@"人数超限 · 换房"];
+                [self scheduleRoomSwitch];
+                return;
+            }
+        }
+        NSInteger seconds = FDParseSeconds(bagText);
+        BOOL isSuper = [bagText rangeOfString:@"超级福袋"].location != NSNotFound;
+        NSInteger mode = (NSInteger)FDNum(FDModeKey, 5);
+        // 类型/时长/限额过滤（安卓 §4.5）
+        if (isSuper) {
+            if (mode == 1) { [self scheduleRoomSwitch]; return; }
+            if (seconds > (NSInteger)FDNum(FDSupLimitMinKey, 15) * 60) { [self setStatus:@"超级福袋时间太长 · 换房"]; [self scheduleRoomSwitch]; return; }
+            if (FDNum(FDSupAttendNKey, 0) >= FDNum(FDSupAttendKey, 100)) { [self setStatus:@"超级福袋参与超限 · 换房"]; [self scheduleRoomSwitch]; return; }
+        } else {
+            if (mode == 0) { [self scheduleRoomSwitch]; return; }
+            if (seconds > (NSInteger)FDNum(FDDiaLimitMinKey, 4) * 60) { [self setStatus:@"福袋时间太长 · 换房"]; [self scheduleRoomSwitch]; return; }
+            if (FDNum(FDDiaAttendNKey, 0) >= FDNum(FDDiaAttendKey, 50)) { [self setStatus:@"福袋参与超限 · 换房"]; [self scheduleRoomSwitch]; return; }
+        }
+        // 进面板
+        if (self->_roomStage != FDRoomPanel) {
+            [self setStatus:isSuper ? @"发现超级福袋 · 进面板" : @"发现福袋 · 进面板"];
+            FDLog(@"room: bag tapped '%@' sec=%ld", bagText, (long)seconds);
+            if ([FDTap tapView:pass.bagHit]) {
+                self->_roomStage = FDRoomPanel;
+                self->_bagType = isSuper ? 2 : 0;
+                double mins = isSuper ? FDNum(FDSupLimitMinKey, 15) : 10.0;
+                self->_panelDeadline = [NSDate dateWithTimeIntervalSinceNow:mins * 60];
+                self->_likedThisRoom = NO; self->_commentedThisRoom = NO; self->_superLikeDone = NO;
+            }
+        }
+        return;
+    }
+
+    // 面板已开 → 面板流程
+    if (self->_roomStage == FDRoomPanel) {
+        [self panelTick:pass];
+        return;
+    }
+
+    // 没福袋 → 换房（等 waitNextRoom 秒）
+    self->_noBagTicks++;
+    if (self->_noBagTicks >= MAX((NSInteger)FDNum(FDWaitRoomKey, 5), 3)) {
+        [self setStatus:@"本房无福袋 · 换房"];
+        [self scheduleRoomSwitch];
+    }
+}
+
+- (long long)parseAudienceCount:(NSString *)text {
+    if (!text.length) return 0;
+    NSCharacterSet *nonDigit = [[NSCharacterSet decimalDigitCharacterSet] invertedSet];
+    NSString *digits = [[text componentsSeparatedByCharactersInSet:nonDigit] componentsJoinedByString:@""];
+    if (digits.length == 0) return 0;
+    long long v = digits.longLongValue;
+    if ([text rangeOfString:@"万"].location != NSNotFound) v = (long long)([digits doubleValue] * 10000);
+    return v;
+}
+
+- (void)scheduleRoomSwitch {
+    if (self->_nextRoomSwitch && [NSDate date] < self->_nextRoomSwitch) return;
+    self->_nextRoomSwitch = [NSDate dateWithTimeIntervalSinceNow:1.0];
+    self->_roomSwitches++;
+    if (self->_roomSwitches > (NSInteger)FDNum(FDMaxSwitchKey, 60)) {
+        FDLog(@"room: switch limit reached, back to feed");
+        self->_roomSwitches = 0;
+        [self exitRoomToFeed];
+        return;
+    }
+    self->_roomStage = FDRoomSwitchWait;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(FDNum(FDWaitRoomKey, 5) * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (!self->_running) return;
+        [self doRoomSwitch];
+    });
+}
+
+// 上滑换房：直播间容器翻页（验证）→ 失败退回 feed 重进
+- (void)doRoomSwitch {
+    UIScrollView *pager = [FDScanner fullPageVerticalScrollInTopVC];
+    if (pager) {
+        CGPoint before = pager.contentOffset;
+        CGPoint off = pager.contentOffset;
+        off.y += pager.bounds.size.height;
+        [pager setContentOffset:off animated:NO];
+        [self fireScrollEndFor:pager];
+        __weak UIScrollView *wsv = pager;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            UIScrollView *s2 = wsv;
+            if (!s2) return;
+            if (fabs(s2.contentOffset.y - before.y) > 60) {
+                FDLog(@"room: swiped to next room");
+                self->_roomStage = FDRoomScan;
+                self->_noBagTicks = 0;
+                return;
+            }
+            FDLog(@"room: pager no movement, exit to feed");
+            [self exitRoomToFeed];
+        });
+        return;
+    }
+    [self exitRoomToFeed];
+}
+
 - (void)fireScrollEndFor:(UIScrollView *)sv {
     id del = sv.delegate;
     if (del && [del respondsToSelector:@selector(scrollViewDidEndDecelerating:)]) {
         ((void (*)(id, SEL, id))objc_msgSend)(del, @selector(scrollViewDidEndDecelerating:), sv);
-        FDLog(@"feed: fired scrollViewDidEndDecelerating");
     }
 }
 
-// 抖音优化同款：从推荐页 VC 及其分页管理器上调用 scrollToNextVideo
-- (BOOL)callScrollToNextVideoFrom:(UIViewController *)top {
-    if (!top) return NO;
-    SEL sel = NSSelectorFromString(@"scrollToNextVideo");
-    NSMutableArray *candidates = [NSMutableArray arrayWithObject:top];
-    for (NSString *key in @[@"pagingManager", @"detailPagingManager", @"feedPagingManager", @"viewModel", @"feedViewModel"]) {
-        @try {
-            id v = [top valueForKey:key];
-            if (v) [candidates addObject:v];
-        } @catch (NSException *e) {
-            // KVC 键不存在，跳过
-        }
+- (void)exitRoomToFeed {
+    UIViewController *top = FDTopVC();
+    BOOL exited = NO;
+    if (top.navigationController && top.navigationController.viewControllers.count > 1) {
+        [top.navigationController popViewControllerAnimated:YES];
+        exited = YES;
     }
-    for (id c in candidates) {
-        if ([c respondsToSelector:sel]) {
-            @try {
-                #pragma clang diagnostic push
-                #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
-                [c performSelector:sel];
-                #pragma clang diagnostic pop
-                FDLog(@"feed: scrollToNextVideo on %@", NSStringFromClass([c class]));
-                return YES;
-            } @catch (NSException *e) {
-                FDLog(@"scrollToNextVideo exception %@", e);
-            }
-        }
+    if (!exited) {
+        NSURL *u = [NSURL URLWithString:@"snssdk1128://feed/"];
+        if (u) [UIApplication.sharedApplication openURL:u options:@{} completionHandler:nil];
     }
-    return NO;
+    self->_roomStage = FDRoomScan;
+    self->_noBagTicks = 0;
+    self->_roomSwitches = 0;
+    self->_nextEnterTry = [NSDate dateWithTimeIntervalSinceNow:6.0];
 }
 
-// 在推荐页 VC（及其父类）里找"下一个视频"方法，找到后按类名缓存
-- (SEL)nextVideoSelectorForTopVC:(UIViewController *)top {
-    static NSMutableDictionary<NSString *, NSString *> *cache = nil;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{ cache = [NSMutableDictionary dictionary]; });
-    if (!top) return NULL;
-    NSString *clsName = NSStringFromClass([top class]);
-    NSString *cached = cache[clsName];
-    if (cached) return NSSelectorFromString(cached);
+#pragma mark 面板流程（普通/超级，安卓 §4.7.1/4.7.2 精简照抄）
 
-    SEL found = NULL;
-    Class cls = [top class];
-    for (int depth = 0; depth < 3 && cls && !found; depth++) {
-        unsigned int mcount = 0;
-        Method *methods = class_copyMethodList(cls, &mcount);
-        for (unsigned int i = 0; i < mcount; i++) {
-            SEL s = method_getName(methods[i]);
-            NSString *name = NSStringFromSelector(s);
-            if (name.length > 20) continue; // 只要无参短方法
-            NSString *lower = [name lowercaseString];
-            if ([lower containsString:@"next"] &&
-                ([lower hasPrefix:@"scroll"] || [lower hasPrefix:@"feed"] || [lower hasPrefix:@"go"] ||
-                 [lower hasPrefix:@"move"] || [lower hasPrefix:@"play"] || [lower hasPrefix:@"to"] ||
-                 [lower hasPrefix:@"didclick"] || [lower containsString:@"tonext"])) {
-                if ([top respondsToSelector:s]) { found = s; break; }
-            }
-        }
-        free(methods);
-        cls = class_getSuperclass(cls);
-    }
-    if (found) {
-        cache[clsName] = NSStringFromSelector(found);
-        FDLog(@"feed: next-video selector found: %@", NSStringFromSelector(found));
-    } else {
-        FDLog(@"feed: no next-video selector on %@", clsName);
-    }
-    return found;
-}
-
-#pragma mark 评论序列（跨 tick 状态机）
-
-- (void)startCommentWithView:(UIView *)btn {
-    if (self->_commentStep != FDCommentNone || !btn) return;
-    if ([FDTap tapView:btn]) {
-        self->_commentStep = FDCommentOpening;
-        self->_commentDeadline = [NSDate dateWithTimeIntervalSinceNow:6.0];
-        FDLog(@"comment: panel opening");
-    }
-}
-
-- (void)commentTickWithPass:(FDScanPass *)pass now:(NSDate *)now {
-    if (self->_commentStep == FDCommentNone) return;
-    if ([now compare:self->_commentDeadline] == NSOrderedDescending) {
-        self->_commentStep = FDCommentNone;
-        FDLog(@"comment: timeout");
+- (void)panelTick:(FDScanPass *)pass {
+    if ([NSDate date] > self->_panelDeadline) {
+        FDLog(@"panel: deadline exceeded, switch room");
+        self->_roomStage = FDRoomScan;
+        [self scheduleRoomSwitch];
         return;
     }
-    switch (self->_commentStep) {
-        case FDCommentOpening: {
-            UIView *field = pass.textField;
-            if ([field isKindOfClass:UITextField.class]) {
-                ((UITextField *)field).text = [self commentTemplates].firstObject ?: @"真好啊";
-                self->_commentStep = FDCommentSending;
-                self->_commentDeadline = [now dateByAddingTimeInterval:4.0];
-                FDLog(@"comment: typed (field)");
-            } else if ([field isKindOfClass:UITextView.class]) {
-                UITextView *tv = (UITextView *)field;
-                [tv becomeFirstResponder];
-                tv.text = [self commentTemplates].firstObject ?: @"真好啊";
-                self->_commentStep = FDCommentSending;
-                self->_commentDeadline = [now dateByAddingTimeInterval:4.0];
-                FDLog(@"comment: typed (textView)");
-            }
-            break;
-        }
-        case FDCommentSending: {
-            if (pass.sendButton) {
-                [pass.sendButton sendActionsForControlEvents:UIControlEventTouchUpInside];
-                self->_commentStep = FDCommentNone;
-                FDLog(@"comment: sent");
-            }
-            break;
-        }
-        default: break;
+    // 放弃条件（安卓 §4.7.3）
+    if (pass.giveupHit) {
+        [self setStatus:@"参与条件不满足 · 换房"];
+        FDLog(@"panel: condition blocked");
+        self->_roomStage = FDRoomScan;
+        [self scheduleRoomSwitch];
+        return;
     }
+
+    BOOL joined = NO;
+    for (NSString *t in pass.panelTexts) {
+        if ([t rangeOfString:@"已参与"].location != NSNotFound ||
+            [t rangeOfString:@"参与成功"].location != NSNotFound ||
+            [t rangeOfString:@"等待开奖"].location != NSNotFound) { joined = YES; break; }
+    }
+
+    if (pass.cleanupHit) {
+        NSString *txt = pass.cleanupHit.accessibilityLabel ?: @"";
+        if ([txt rangeOfString:@"领取奖品"].location != NSNotFound || [txt rangeOfString:@"恭喜"].location != NSNotFound) {
+            [self noteReward:txt];
+        } else {
+            FDLog(@"panel: result popup (lose) tapped");
+            [self noteLose];
+        }
+        [FDTap tapView:pass.cleanupHit];
+        self->_roomStage = FDRoomScan;
+        [self scheduleRoomSwitch];
+        return;
+    }
+
+    if (joined) {
+        [self setStatus:@"已参与 · 挂机等开奖"];
+        [self waitingEngagement:pass];
+        return;
+    }
+
+    // 金额过滤（超级福袋：参考价值）
+    if (self->_bagType == 2) {
+        double price = 0;
+        for (NSString *t in pass.panelTexts) {
+            NSRange r = [t rangeOfString:@"参考价值"];
+            if (r.location != NSNotFound) {
+                NSCharacterSet *nonDigit = [[NSCharacterSet decimalDigitCharacterSet] invertedSet];
+                NSString *digits = [[t componentsSeparatedByCharactersInSet:nonDigit] componentsJoinedByString:@""];
+                if (digits.length >= 2) price = [[digits substringFromIndex:1] doubleValue];
+                if (price <= 0) price = digits.doubleValue;
+                break;
+            }
+        }
+        if (price > 0) {
+            if (price < FDNum(FDMinSuperKey, 50) || price > FDNum(FDMaxSuperKey, 99999)) {
+                [self setStatus:[NSString stringWithFormat:@"参考价 %.0f 元 · 放弃", price]];
+                FDLog(@"panel: price %.0f out of range", price);
+                self->_roomStage = FDRoomScan;
+                [self scheduleRoomSwitch];
+                return;
+            }
+            FDLog(@"panel: super price=%.0f ok", price);
+        }
+    }
+
+    // 参与按钮（5 秒防重）
+    if (pass.claimHit) {
+        if (self->_claimedAt && [[NSDate date] timeIntervalSinceDate:self->_claimedAt] < 5.0) {
+            [self setStatus:@"参与点击确认中"];
+            return;
+        }
+        self->_claimedAt = [NSDate date];
+        if (self->_bagType == 2) FDNumIncrement(FDSupAttendNKey); else FDNumIncrement(FDDiaAttendNKey);
+        [self setStatus:@"点击参与"];
+        FDLog(@"panel: claim tapped");
+        if ([FDTap tapView:pass.claimHit]) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                FDScanPass *p2 = [FDScanPass new];
+                p2.claimContains = @[@"发送"];
+                p2.deadline = CFAbsoluteTimeGetCurrent() + 0.06;
+                [FDScanner runPass:p2];
+                if ([p2.claimHit isKindOfClass:UIControl.class]) {
+                    [(UIControl *)p2.claimHit sendActionsForControlEvents:UIControlEventTouchUpInside];
+                    FDLog(@"panel: comment sent after claim");
+                }
+            });
+        }
+        self->_joinedDeadline = [NSDate dateWithTimeIntervalSinceNow:1200];
+        return;
+    }
+
+    [self setStatus:@"面板扫描中"];
+    [self waitingEngagement:pass];
 }
 
-#pragma mark 直播间：抢福袋 + 互动 + 自动退出
+- (void)noteReward:(NSString *)txt {
+    if (self->_bagType == 2) FDNumIncrement(FDSupRewardNKey); else FDNumIncrement(FDDiaRewardNKey);
+    [self setStatus:@"中奖了！🎉"];
+    FDLog(@"reward: %@", txt);
+}
 
-- (void)roomTickAt:(NSDate *)now commentActive:(BOOL)commentActive {
-    FDScanPass *pass = [FDScanPass new];
-    pass.textContains = [self entryKeywords];
-    pass.claimContains = @[@"参与", @"领取", @"抢福袋", @"立即抢"];
-    pass.a11yNeed = @[@"点赞", @"赞", @"评论"];
-    [FDScanner runPass:pass];
+- (void)noteLose {
+    // 连续不中奖换房逻辑保留扩展位
+}
 
-    // 直播间点赞：触发概率3%，一次点 2~10 次
+- (void)waitingEngagement:(FDScanPass *)pass {
+    // 剩余 >30s 时：点赞（30%概率 5~50 次，仅一次）+ 评论（概率，仅一次）
+    NSInteger remain = 0;
+    for (NSString *t in pass.panelTexts) {
+        NSInteger s = FDParseSeconds(t);
+        if (s > 0) { remain = s; break; }
+    }
+    if (remain > 0 && remain <= 30) return;
     NSInteger roll = FDRand(1, 100);
-    if ((double)roll <= FDNum(FDLiveActProbKey, 3)) {
+    if (!self->_likedThisRoom && (double)roll <= FDNum(FDLikeRateKey, 30)) {
         UIView *like = pass.a11yHits[@"点赞"] ?: pass.a11yHits[@"赞"];
         if (like) {
-            NSInteger times = FDRand((NSInteger)FDNum(FDLiveLikeMinKey, 2), (NSInteger)FDNum(FDLiveLikeMaxKey, 10));
+            NSInteger times = FDRand((NSInteger)FDNum(FDLikeMinKey, 5), (NSInteger)FDNum(FDLikeMaxKey, 50));
             for (NSInteger i = 0; i < times; i++) {
                 dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(i * 0.12 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                     [FDTap tapView:like];
                 });
             }
+            self->_likedThisRoom = YES;
             FDLog(@"room: like burst x%ld", (long)times);
         }
     }
-    // 直播间评论（概率打折，避免太频繁）
     roll = FDRand(1, 100);
-    if ((double)roll <= FDNum(FDPCommentKey, 20) * 0.15) {
-        [self startCommentWithView:pass.a11yHits[@"评论"]];
-    }
-    [self commentTickWithPass:pass now:now];
-
-    // 抢福袋两段式
-    NSTimeInterval cooldown = FDNum(FDCooldownKey, 20);
-    if (self->_lastTrigger) {
-        NSTimeInterval rest = cooldown - [now timeIntervalSinceDate:self->_lastTrigger];
-        if (rest > 0) {
-            [self setStatus:[NSString stringWithFormat:@"冷却 %.0fs", rest]];
-            [self maybeLeaveRoomAt:now];
-            return;
-        }
-    }
-
-    switch (self->_stage) {
-        case FDStageScanning: {
-            if (self->_lastEntryTap && [now timeIntervalSinceDate:self->_lastEntryTap] < 8.0) {
-                [self maybeLeaveRoomAt:now];
-                return;
-            }
-            UIView *entry = pass.textHit;
-            if (!entry) {
-                [self setStatus:@"直播间扫描中"];
-                [self maybeLeaveRoomAt:now];
-                return;
-            }
-            FDLog(@"stage=Scanning entry=%@", NSStringFromClass([entry class]));
-            if ([FDTap tapView:entry]) {
-                self->_lastEntryTap = [NSDate date];
-                self->_lastLuckySignal = now;
-                self->_stage = FDStageInPanel;
-                self->_panelDeadline = [now dateByAddingTimeInterval:4.0];
-                [self setStatus:@"已点入口 · 找按钮"];
-                FDLog(@"state=InPanel");
-            }
-            break;
-        }
-        case FDStageInPanel: {
-            UIView *claim = pass.claimHit;
-            if (claim) {
-                NSString *claimText = ([claim isKindOfClass:UILabel.class] ? [(UILabel *)claim text] : @"");
-                FDLog(@"stage=InPanel claim=%@ text=%@", NSStringFromClass([claim class]), claimText ?: @"");
-                if ([FDTap tapView:claim]) {
-                    self->_lastTrigger = [NSDate date];
-                    self->_dailyCount += 1;
-                    self->_stage = FDStageScanning;
-                    [self setStatus:@"已点参与 · 冷却中"];
-                    FDLog(@"state=Triggering count=%ld", (long)self->_dailyCount);
+    if (!self->_commentedThisRoom && (double)roll <= FDNum(FDCmtRateKey, 0)) {
+        UIView *cmt = pass.a11yHits[@"评论"];
+        if (cmt) {
+            self->_commentedThisRoom = YES;
+            [FDTap tapView:cmt];
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                FDScanPass *p2 = [FDScanPass new];
+                p2.deadline = CFAbsoluteTimeGetCurrent() + 0.06;
+                [FDScanner runPass:p2];
+                UIView *field = p2.textField;
+                if ([field isKindOfClass:UITextField.class]) {
+                    ((UITextField *)field).text = [self commentTemplates].firstObject ?: @"真好啊";
+                } else if ([field isKindOfClass:UITextView.class]) {
+                    UITextView *tv = (UITextView *)field;
+                    [tv becomeFirstResponder];
+                    tv.text = [self commentTemplates].firstObject ?: @"真好啊";
                 }
-            } else if ([now compare:self->_panelDeadline] == NSOrderedDescending) {
-                self->_stage = FDStageScanning;
-                [self setStatus:@"未找到参与按钮"];
-                FDLog(@"state=ScanFallback");
-            }
-            break;
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                    FDScanPass *p3 = [FDScanPass new];
+                    p3.claimContains = @[@"发送"];
+                    p3.deadline = CFAbsoluteTimeGetCurrent() + 0.06;
+                    [FDScanner runPass:p3];
+                    if ([p3.claimHit isKindOfClass:UIControl.class]) {
+                        [(UIControl *)p3.claimHit sendActionsForControlEvents:UIControlEventTouchUpInside];
+                        FDLog(@"room: comment sent");
+                    }
+                });
+            });
         }
     }
 }
 
-// 抢完/没福袋后自动退出直播间回推荐页（安卓: 抢完等待10秒→换直播间）
-- (void)maybeLeaveRoomAt:(NSDate *)now {
-    NSTimeInterval sinceSignal = [now timeIntervalSinceDate:self->_lastLuckySignal ?: now];
-    if (sinceSignal < FDNum(FDCooldownKey, 20) + 10.0) return;
-    UIViewController *top = FDTopVC();
-    if (top.navigationController && top.navigationController.viewControllers.count > 1) {
-        [self setStatus:@"抢完 · 退出直播间"];
-        FDLog(@"room: leaving (pop)");
-        [top.navigationController popViewControllerAnimated:YES];
-        self->_lastLuckySignal = now; // 防连点
+- (NSArray<NSString *> *)commentTemplates {
+    NSMutableArray *list = [NSMutableArray array];
+    for (NSString *part in [FDStr(FDCommentsKey, @"主播太帅了/真好/太完美了/优秀/Perfect!") componentsSeparatedByString:@"/"]) {
+        NSString *t = [part stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+        if (t.length) [list addObject:t];
     }
+    return list;
 }
 
-#pragma mark 精准福袋链路
-
-- (BOOL)canTriggerNow {
-    if (!self->_running || !FDEnabled()) return NO;
-    if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) return NO;
-    if (self->_nurtureDeadline && [NSDate date] < self->_nurtureDeadline) return NO;
-    NSDate *now = [NSDate date];
-    NSInteger limit = (NSInteger)FDNum(FDDailyLimitKey, 30);
-    if (limit > 0 && self->_dailyCount >= limit) return NO;
-    if (self->_lastTrigger && [now timeIntervalSinceDate:self->_lastTrigger] < FDNum(FDCooldownKey, 20)) return NO;
-    if (self->_lastEntryTap && [now timeIntervalSinceDate:self->_lastEntryTap] < 8.0) return NO;
-    return YES;
+static void FDNumIncrement(NSString *key) {
+    NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
+    [d setDouble:[d doubleForKey:key] + 1 forKey:key];
 }
 
-- (void)noteLuckyBoxPanelOpened {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        self->_stage = FDStageInPanel;
-        self->_panelDeadline = [NSDate dateWithTimeIntervalSinceNow:4.0];
-        [self setStatus:@"面板已开 · 找按钮"];
-        FDLog(@"state=InPanel reason=luckybox-manager");
-    });
-}
+#pragma mark LuckyBox hook 联动（保留精准信号）
 
-- (void)luckyBoxSignalOnInstance:(id)manager reason:(NSString *)reason {
-    if (![self canTriggerNow]) return;
-    // 过滤：普通福袋价值低于X抖币不抢
-    double minCoins = FDNum(FDMinCoinsKey, 10);
-    if (minCoins > 0 && self->_lastDiamondCount > 0 && self->_lastDiamondCount < (long long)minCoins) {
-        [self setStatus:@"福袋价值过低 · 跳过"];
-        FDLog(@"luckybox skip: coins=%lld < %.0f", self->_lastDiamondCount, minCoins);
-        return;
-    }
-    // 过滤：只抢X人以内直播间
-    if ([NSUserDefaults.standardUserDefaults boolForKey:FDFilterRoomKey] && self->_roomSize > 0) {
-        double maxRoom = FDNum(FDMaxRoomKey, 1000);
-        if (self->_roomSize > (long long)maxRoom) {
-            [self setStatus:@"直播间人数过多 · 跳过"];
-            FDLog(@"luckybox skip: room=%lld > %.0f", self->_roomSize, maxRoom);
-            return;
-        }
-    }
-    FDLog(@"luckybox signal reason=%@ manager=%@", reason, NSStringFromClass([manager class]));
-    NSTimeInterval delay = FDNum(FDDelayKey, 0);
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * 60 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        if (![self canTriggerNow]) return;
-        SEL open = NSSelectorFromString(@"openGrabLuckyBoxView");
-        if (manager && [manager respondsToSelector:open]) {
-            self->_lastEntryTap = [NSDate date];
-            self->_lastLuckySignal = [NSDate date];
-            [self setStatus:@"发现福袋 · 开面板"];
+- (void)noteLuckySignalOnInstance:(id)manager {
+    self->_lastLuckySignal = [NSDate date];
+    if (gFDPhase != FDPhaseGrab || self->_roomStage != FDRoomScan) return;
+    SEL open = NSSelectorFromString(@"openGrabLuckyBoxView");
+    if (manager && [manager respondsToSelector:open]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (!self->_running || self->_roomStage != FDRoomScan) return;
             #pragma clang diagnostic push
             #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
             [manager performSelector:open];
             #pragma clang diagnostic pop
-            FDLog(@"state=PanelOpenCalled");
-        }
-    });
+            self->_roomStage = FDRoomPanel;
+            self->_bagType = 0;
+            self->_panelDeadline = [NSDate dateWithTimeIntervalSinceNow:600];
+            [self setStatus:@"发现福袋 · 进面板"];
+            FDLog(@"luckybox: panel opened via manager");
+        });
+    }
 }
 
 - (void)noteRoomModel:(id)roomModel {
@@ -1038,13 +1092,11 @@ typedef NS_ENUM(NSInteger, FDCommentStep) {
             id v = [roomModel valueForKey:key];
             if ([v isKindOfClass:NSNumber.class]) {
                 self->_roomSize = [(NSNumber *)v longLongValue];
-                FDLog(@"room size=%lld via %@", self->_roomSize, key);
+                FDLog(@"room size=%lld", self->_roomSize);
                 return;
             }
         }
-    } @catch (NSException *e) {
-        FDLog(@"roomModel read exception %@", e);
-    }
+    } @catch (NSException *e) { }
 }
 
 - (void)noteDiamondFromManager:(id)manager {
@@ -1053,20 +1105,14 @@ typedef NS_ENUM(NSInteger, FDCommentStep) {
         if (!item) return;
         id v = [item valueForKey:@"diamondCount"];
         if ([v isKindOfClass:NSNumber.class]) {
-            self->_lastDiamondCount = [(NSNumber *)v longLongValue];
-            FDLog(@"diamond count=%lld", self->_lastDiamondCount);
+            self->_lastDiamond = [(NSNumber *)v longLongValue];
+            FDLog(@"diamond=%lld", self->_lastDiamond);
         }
-    } @catch (NSException *e) {
-        FDLog(@"diamond read exception %@", e);
-    }
+    } @catch (NSException *e) { }
 }
-
-- (void)noteLuckySignal { self->_lastLuckySignal = [NSDate date]; }
-- (void)redPacketTapped { self->_lastTrigger = [NSDate date]; }
-- (NSInteger)dailyCount { return self->_dailyCount; }
 @end
 
-#pragma mark - 悬浮窗 + 设置面板（对照安卓版配置项，可滚动）
+#pragma mark - 悬浮窗 + 设置面板
 
 static void FDDumpRuntimeInfo(void);
 
@@ -1092,7 +1138,6 @@ static void FDDumpRuntimeInfo(void);
             if ([s isKindOfClass:UIWindowScene.class]) { scene = (UIWindowScene *)s; break; }
         }
         if (!scene) {
-            FDLog(@"install: scene not ready, retries=%ld", (long)retries);
             if (retries > 0) {
                 dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
                     [self installWithRetry:retries - 1];
@@ -1119,7 +1164,7 @@ static void FDDumpRuntimeInfo(void);
         [w addSubview:box];
         w.hidden = NO;
         self->_window = w;
-        FDLog(@"floating window installed");
+        FDLog(@"floating installed");
     });
 }
 
@@ -1131,9 +1176,7 @@ static void FDDumpRuntimeInfo(void);
 }
 
 - (BOOL)ownsKeyWindow {
-    for (UIWindow *w in [self fdWindows]) {
-        if (w.isKeyWindow) return YES;
-    }
+    for (UIWindow *w in [self fdWindows]) if (w.isKeyWindow) return YES;
     return NO;
 }
 
@@ -1171,26 +1214,23 @@ static void FDDumpRuntimeInfo(void);
     w.windowLevel = UIWindowLevelAlert + 8;
     w.backgroundColor = UIColor.clearColor;
     w.hidden = NO;
-
     UIView *card = [[UIView alloc] initWithFrame:w.bounds];
     card.backgroundColor = [UIColor colorWithWhite:0.07 alpha:0.97];
     card.layer.cornerRadius = 16;
     card.clipsToBounds = YES;
     [w addSubview:card];
 
-    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(16, 14, 180, 22)];
-    title.text = @"福袋助手 · 全自动";
+    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(16, 14, 200, 22)];
+    title.text = @"福袋助手 0.7";
     title.textColor = UIColor.whiteColor;
     title.font = [UIFont boldSystemFontOfSize:16];
     [card addSubview:title];
-
     UIButton *close = [UIButton buttonWithType:UIButtonTypeSystem];
     close.frame = CGRectMake(232, 14, 52, 22);
     [close setTitle:@"完成" forState:UIControlStateNormal];
     [close setTitleColor:[UIColor colorWithRed:0.30 green:0.75 blue:1.0 alpha:1.0] forState:UIControlStateNormal];
     [close addTarget:self action:@selector(togglePanel) forControlEvents:UIControlEventTouchUpInside];
     [card addSubview:close];
-
     UILabel *st = [[UILabel alloc] initWithFrame:CGRectMake(16, 40, 268, 18)];
     st.textColor = [UIColor colorWithWhite:1 alpha:0.7];
     st.font = [UIFont systemFontOfSize:12];
@@ -1198,27 +1238,37 @@ static void FDDumpRuntimeInfo(void);
     self->_statusLabel = st;
 
     UIScrollView *scroll = [[UIScrollView alloc] initWithFrame:CGRectMake(0, 64, 300, 496)];
-    scroll.contentSize = CGSizeMake(300, 720);
-    scroll.showsVerticalScrollIndicator = YES;
     [card addSubview:scroll];
-
     self->_fields = [NSMutableDictionary dictionary];
     CGFloat y = 8;
-    y = [self switchRowIn:scroll y:y key:FDEnabledKey label:@"总开关（自动抢福袋）"];
-    y = [self switchRowIn:scroll y:y key:FDBrowseKey label:@"自动逛推荐页+找福袋"];
-    y = [self dualRowIn:scroll y:y label1:@"看视频(秒)" key1:FDWatchMinKey def1:@1 label2:@"~" key2:FDWatchMaxKey def2:@5];
-    y = [self dualRowIn:scroll y:y label1:@"操作间隔(秒)" key1:FDGapMinKey def1:@1 label2:@"~" key2:FDGapMaxKey def2:@3];
-    y = [self dualRowIn:scroll y:y label1:@"点赞概率%" key1:FDPLikeKey def1:@35 label2:@"关注%" key2:FDPFollowKey def2:@10];
-    y = [self dualRowIn:scroll y:y label1:@"主页概率%" key1:FDPProfileKey def1:@10 label2:@"评论%" key2:FDPCommentKey def2:@20];
-    y = [self dualRowIn:scroll y:y label1:@"收藏概率%" key1:FDPFavKey def1:@5 label2:@"分享%" key2:FDPShareKey def2:@3];
-    y = [self dualRowIn:scroll y:y label1:@"直播间点赞次数" key1:FDLiveLikeMinKey def1:@2 label2:@"~" key2:FDLiveLikeMaxKey def2:@10];
-    y = [self dualRowIn:scroll y:y label1:@"直播间触发%" key1:FDLiveActProbKey def1:@3 label2:@"定时养号(分)" key2:FDNurtureKey def2:@0];
-    y = [self dualRowIn:scroll y:y label1:@"福袋低于(抖币)不抢" key1:FDMinCoinsKey def1:@10 label2:@"只抢X人内" key2:FDMaxRoomKey def2:@1000];
+
+    y = [self switchRowIn:scroll y:y key:FDEnabledKey label:@"总开关"];
+    y = [self numRowIn:scroll y:y key:FDModeKey label:@"模式(0超1币2关3养4手5全)" def:@5];
+    y = [self numRowIn:scroll y:y key:FDGrabMinKey label:@"抢福袋时长(分,0=养号)" def:@60];
+    y = [self numRowIn:scroll y:y key:FDBrowseMinKey label:@"刷视频时长(分)" def:@10];
+    y = [self numRowIn:scroll y:y key:FDRestMinKey label:@"休息时长(分)" def:@0];
+    y = [self numRowIn:scroll y:y key:FDDiaAttendKey label:@"抖币福袋参与上限" def:@50];
+    y = [self numRowIn:scroll y:y key:FDDiaRewardKey label:@"抖币中奖上限" def:@5];
+    y = [self numRowIn:scroll y:y key:FDDiaLimitMinKey label:@"抖币袋超时(分)放弃" def:@4];
+    y = [self numRowIn:scroll y:y key:FDSupAttendKey label:@"超级福袋参与上限" def:@100];
+    y = [self numRowIn:scroll y:y key:FDSupLimitMinKey label:@"超级袋超时(分)放弃" def:@15];
+    y = [self numRowIn:scroll y:y key:FDMinSuperKey label:@"参考价下限(元)" def:@50];
+    y = [self numRowIn:scroll y:y key:FDMaxSuperKey label:@"参考价上限(元)" def:@99999];
     y = [self switchRowIn:scroll y:y key:FDFilterRoomKey label:@"启用人数过滤"];
-    y = [self dualRowIn:scroll y:y label1:@"冷却(秒)" key1:FDCooldownKey def1:@20 label2:@"每日上限" key2:FDDailyLimitKey def2:@30];
-    y = [self fieldRowIn:scroll y:y key:FDKeywordKey label:@"福袋关键字" value:FDStr(FDKeywordKey, @"福袋")];
-    y = [self fieldRowIn:scroll y:y key:FDCommentsKey label:@"评论模板(/分隔)" value:FDStr(FDCommentsKey, @"真好啊/值得看这个/主播我看你直播好久了/666")];
-    y = [self switchRowIn:scroll y:y key:FDDebugKey label:@"调试日志"];
+    y = [self numRowIn:scroll y:y key:FDMaxRoomKey label:@"只抢X人以内" def:@200000];
+    y = [self numRowIn:scroll y:y key:FDWaitRoomKey label:@"换房等待(秒)" def:@5];
+    y = [self numRowIn:scroll y:y key:FDMaxSwitchKey label:@"换房次数上限" def:@60];
+    y = [self numRowIn:scroll y:y key:FDLikeRateKey label:@"直播间点赞概率%" def:@30];
+    y = [self numRowIn:scroll y:y key:FDLikeMinKey label:@"点赞次数min" def:@5];
+    y = [self numRowIn:scroll y:y key:FDLikeMaxKey label:@"点赞次数max" def:@50];
+    y = [self numRowIn:scroll y:y key:FDCmtRateKey label:@"直播间评论概率%" def:@0];
+    y = [self numRowIn:scroll y:y key:FDAttendModeKey label:@"参与时机(6=立马)" def:@6];
+    y = [self switchRowIn:scroll y:y key:FDFansTeamKey label:@"允许加粉丝团"];
+    y = [self numRowIn:scroll y:y key:FDFansYuanKey label:@"加团条件参考价(元)" def:@2000];
+    y = [self switchRowIn:scroll y:y key:FDAutoplayKey label:@"原生自动连播(刷视频)"];
+    y = [self fieldRowIn:scroll y:y key:FDSearchKey label:@"搜索关键词" value:FDStr(FDSearchKey, @"带货直播间")];
+    y = [self fieldRowIn:scroll y:y key:FDCommentsKey label:@"评论模板(/分隔)" value:FDStr(FDCommentsKey, @"主播太帅了/真好/太完美了/优秀/Perfect!")];
+    y = [self switchRowIn:scroll y:y key:FDDebugKey label:@"调试日志(落盘)"];
 
     UIButton *diag = [UIButton buttonWithType:UIButtonTypeSystem];
     diag.frame = CGRectMake(16, y, 150, 30);
@@ -1241,10 +1291,10 @@ static void FDDumpRuntimeInfo(void);
     l.adjustsFontSizeToFitWidth = YES;
     [scroll addSubview:l];
     UISwitch *sw = [[UISwitch alloc] initWithFrame:CGRectMake(216, y, 51, 31)];
-    sw.on = [NSUserDefaults.standardUserDefaults boolForKey:key];
+    sw.on = FDBool(key, NO);
     sw.onTintColor = [UIColor colorWithRed:0.20 green:0.72 blue:0.40 alpha:1.0];
-    [sw addTarget:self action:@selector(switchChanged:) forControlEvents:UIControlEventValueChanged];
     sw.accessibilityIdentifier = key;
+    [sw addTarget:self action:@selector(switchChanged:) forControlEvents:UIControlEventValueChanged];
     [scroll addSubview:sw];
     return y + 42;
 }
@@ -1259,13 +1309,35 @@ static void FDDumpRuntimeInfo(void);
     }
 }
 
-- (CGFloat)fieldRowIn:(UIScrollView *)scroll y:(CGFloat)y key:(NSString *)key label:(NSString *)label value:(NSString *)v {
-    UILabel *l = [[UILabel alloc] initWithFrame:CGRectMake(16, y + 8, 240, 20)];
+- (CGFloat)numRowIn:(UIScrollView *)scroll y:(CGFloat)y key:(NSString *)key label:(NSString *)label def:(NSNumber *)def {
+    UILabel *l = [[UILabel alloc] initWithFrame:CGRectMake(16, y + 4, 150, 18)];
     l.text = label;
     l.textColor = UIColor.whiteColor;
-    l.font = [UIFont systemFontOfSize:12];
+    l.font = [UIFont systemFontOfSize:11];
+    l.adjustsFontSizeToFitWidth = YES;
     [scroll addSubview:l];
-    UITextField *f = [[UITextField alloc] initWithFrame:CGRectMake(16, y + 30, 268, 32)];
+    UITextField *f = [[UITextField alloc] initWithFrame:CGRectMake(180, y, 100, 30)];
+    double v = [NSUserDefaults.standardUserDefaults objectForKey:key] ? [NSUserDefaults.standardUserDefaults doubleForKey:key] : def.doubleValue;
+    f.text = [NSString stringWithFormat:@"%g", v];
+    f.textColor = UIColor.whiteColor;
+    f.keyboardType = UIKeyboardTypeNumbersAndPunctuation;
+    f.borderStyle = UITextBorderStyleRoundedRect;
+    f.backgroundColor = [UIColor colorWithWhite:1 alpha:0.14];
+    f.textAlignment = NSTextAlignmentCenter;
+    f.font = [UIFont systemFontOfSize:13];
+    [f addTarget:self action:@selector(fieldChanged:) forControlEvents:UIControlEventEditingDidEnd];
+    [scroll addSubview:f];
+    self->_fields[key] = f;
+    return y + 38;
+}
+
+- (CGFloat)fieldRowIn:(UIScrollView *)scroll y:(CGFloat)y key:(NSString *)key label:(NSString *)label value:(NSString *)v {
+    UILabel *l = [[UILabel alloc] initWithFrame:CGRectMake(16, y + 2, 240, 18)];
+    l.text = label;
+    l.textColor = UIColor.whiteColor;
+    l.font = [UIFont systemFontOfSize:11];
+    [scroll addSubview:l];
+    UITextField *f = [[UITextField alloc] initWithFrame:CGRectMake(16, y + 22, 268, 30)];
     f.text = v ?: @"";
     f.textColor = UIColor.whiteColor;
     f.borderStyle = UITextBorderStyleRoundedRect;
@@ -1274,46 +1346,7 @@ static void FDDumpRuntimeInfo(void);
     [f addTarget:self action:@selector(fieldChanged:) forControlEvents:UIControlEventEditingDidEnd];
     [scroll addSubview:f];
     self->_fields[key] = f;
-    return y + 70;
-}
-
-- (CGFloat)dualRowIn:(UIScrollView *)scroll y:(CGFloat)y label1:(NSString *)l1 key1:(NSString *)k1 def1:(NSNumber *)d1 label2:(NSString *)l2 key2:(NSString *)k2 def2:(NSNumber *)d2 {
-    UILabel *la = [[UILabel alloc] initWithFrame:CGRectMake(16, y + 8, 110, 18)];
-    la.text = l1;
-    la.textColor = UIColor.whiteColor;
-    la.font = [UIFont systemFontOfSize:11];
-    [scroll addSubview:la];
-    UITextField *fa = [[UITextField alloc] initWithFrame:CGRectMake(16, y + 28, 118, 30)];
-    double v1 = [NSUserDefaults.standardUserDefaults objectForKey:k1] ? [NSUserDefaults.standardUserDefaults doubleForKey:k1] : d1.doubleValue;
-    fa.text = [NSString stringWithFormat:@"%g", v1];
-    fa.textColor = UIColor.whiteColor;
-    fa.keyboardType = UIKeyboardTypeNumbersAndPunctuation;
-    fa.borderStyle = UITextBorderStyleRoundedRect;
-    fa.backgroundColor = [UIColor colorWithWhite:1 alpha:0.14];
-    fa.textAlignment = NSTextAlignmentCenter;
-    fa.font = [UIFont systemFontOfSize:13];
-    [fa addTarget:self action:@selector(fieldChanged:) forControlEvents:UIControlEventEditingDidEnd];
-    [scroll addSubview:fa];
-    self->_fields[k1] = fa;
-
-    UILabel *lb = [[UILabel alloc] initWithFrame:CGRectMake(152, y + 8, 110, 18)];
-    lb.text = l2;
-    lb.textColor = UIColor.whiteColor;
-    lb.font = [UIFont systemFontOfSize:11];
-    [scroll addSubview:lb];
-    UITextField *fb = [[UITextField alloc] initWithFrame:CGRectMake(152, y + 28, 118, 30)];
-    double v2 = [NSUserDefaults.standardUserDefaults objectForKey:k2] ? [NSUserDefaults.standardUserDefaults doubleForKey:k2] : d2.doubleValue;
-    fb.text = [NSString stringWithFormat:@"%g", v2];
-    fb.textColor = UIColor.whiteColor;
-    fb.keyboardType = UIKeyboardTypeNumbersAndPunctuation;
-    fb.borderStyle = UITextBorderStyleRoundedRect;
-    fb.backgroundColor = [UIColor colorWithWhite:1 alpha:0.14];
-    fb.textAlignment = NSTextAlignmentCenter;
-    fb.font = [UIFont systemFontOfSize:13];
-    [fb addTarget:self action:@selector(fieldChanged:) forControlEvents:UIControlEventEditingDidEnd];
-    [scroll addSubview:fb];
-    self->_fields[k2] = fb;
-    return y + 66;
+    return y + 60;
 }
 
 - (void)fieldChanged:(UITextField *)f { [self saveAll]; }
@@ -1323,16 +1356,11 @@ static void FDDumpRuntimeInfo(void);
     for (NSString *key in self->_fields) {
         UITextField *f = self->_fields[key];
         if (!f.text.length) continue;
-        if ([key isEqualToString:FDKeywordKey] || [key isEqualToString:FDCommentsKey]) {
+        if ([key isEqualToString:FDSearchKey] || [key isEqualToString:FDCommentsKey]) {
             [d setObject:f.text forKey:key];
         } else {
             [d setDouble:[f.text doubleValue] forKey:key];
         }
-    }
-    // 养号倒计时重置
-    double nurture = [d doubleForKey:FDNurtureKey];
-    if (nurture > 0 && FDEnabled()) {
-        // 由协调器在 start 时应用；此处仅提示
     }
 }
 
@@ -1340,9 +1368,7 @@ static void FDDumpRuntimeInfo(void);
     sender.enabled = NO;
     FDDumpRuntimeInfo();
     sender.enabled = YES;
-    if (self->_statusLabel) {
-        self->_statusLabel.text = @"已写入 Documents/fudai_dump.txt";
-    }
+    if (self->_statusLabel) self->_statusLabel.text = @"已写入 Documents/fudai_dump.txt";
 }
 
 - (void)refreshUI {
@@ -1350,7 +1376,7 @@ static void FDDumpRuntimeInfo(void);
     [_button setTitle:(on ? @"福袋 · 开" : @"福袋 · 关") forState:UIControlStateNormal];
     if (_statusLabel && !_lastExternalStatus) {
         _statusLabel.text = on
-            ? [NSString stringWithFormat:@"运行中 · 今日已触发 %ld 次", (long)[[FDCoordinator shared] dailyCount]]
+            ? [NSString stringWithFormat:@"运行中 · 参与 %ld 次", (long)[[FDCoordinator shared] dailyCount]]
             : @"已暂停";
     }
 }
@@ -1369,51 +1395,72 @@ static void FDDumpRuntimeInfo(void);
 }
 @end
 
-#pragma mark - 抖音 hooks（福袋精准链路 + 观察者）
+#pragma mark - Hooks
 
-%group GComponentTapped
+// ★ 刷视频：抖音优化 28.52 同款门卫（原生自动连播接管，照抄最小清单）
+// 每个宿主类独立分组，类不存在则跳过（28.52 分析 §4.2 的 5 个 hook）
+static BOOL FDAutoPlayGate(void) { return FDAutoPlayActive(); }
+
+%group GAutoPlay1
+%hook AWEAwemeDetailTableViewController
+- (BOOL)hasIphoneAutoPlaySwitch {
+    if (FDAutoPlayGate()) return YES;
+    return %orig;
+}
+%end
+%end
+
+%group GAutoPlay2
+%hook AWEAwemeDetailContainerPlayControlConfig
+- (BOOL)enableUserProfilePostAutoPlay {
+    if (FDAutoPlayGate()) return YES;
+    return %orig;
+}
+%end
+%end
+
+%group GAutoPlay3
+%hook AWEFeedIPhoneAutoPlayManager
+- (BOOL)isAutoPlayOpen {
+    if (FDAutoPlayGate()) return YES;
+    return %orig;
+}
+- (NSInteger)getFeedIphoneAutoPlayState {
+    if (FDAutoPlayGate()) return 1;
+    return %orig;
+}
+%end
+%end
+
+%group GAutoPlay4
+%hook AWEFeedModuleService
+- (NSInteger)getFeedIphoneAutoPlayState {
+    if (FDAutoPlayGate()) return 1;
+    return %orig;
+}
+%end
+%end
+
+// 观察者（私聊红包，保留）
+%group GObserveIM
 %hook AWEIMDouyinRedPacketComponent
 - (void)redPacketDidTapped {
-    [[FDCoordinator shared] redPacketTapped];
+    [[FDCoordinator shared] noteLuckySignalOnInstance:nil];
     %orig;
 }
 %end
 %end
 
-%group GDataFetch2
-%hook AWEIMDouyinRedPacketDataManager
-- (void)fetchRedPacketInfoWithOrderId:(id)orderId completion:(id)completion {
-    FDLog(@"observe: fetchRedPacketInfo");
-    %orig;
-}
-%end
-%end
-
-%group GDataFetch3
-%hook AWEIMDouyinRedPacketDataManager
-- (void)fetchRedPacketInfoWithOrderId:(id)orderId params:(id)params completion:(id)completion {
-    FDLog(@"observe: fetchRedPacketInfo");
-    %orig;
-}
-%end
-%end
-
-// 直播福袋核心（类名来自 fudai_dump.txt 实测）
+// 直播福袋核心（LuckyBox 管理器：精准信号 + 直开面板 + 房间数据）
 %group GLuckyBoxManager
 %hook IESLiveLuckyBoxServiceManager
 - (void)messageReceived:(id)message {
     %orig;
-    [[FDCoordinator shared] noteLuckySignal];
-    [[FDCoordinator shared] luckyBoxSignalOnInstance:self reason:@"messageReceived"];
+    [[FDCoordinator shared] noteLuckySignalOnInstance:self];
 }
 - (void)createLuckyBoxShortTouchItem:(id)item aniViewData:(id)aniViewData isShowEntranceAnimation:(BOOL)animate {
     %orig;
-    [[FDCoordinator shared] noteLuckySignal];
-    [[FDCoordinator shared] luckyBoxSignalOnInstance:self reason:@"entranceCreated"];
-}
-- (void)openGrabLuckyBoxView {
-    %orig;
-    [[FDCoordinator shared] noteLuckyBoxPanelOpened];
+    [[FDCoordinator shared] noteLuckySignalOnInstance:self];
 }
 - (void)setRoomModel:(id)roomModel {
     %orig;
@@ -1426,21 +1473,22 @@ static void FDDumpRuntimeInfo(void);
 %end
 %end
 
-static BOOL gCompTapped, gDataFetch2, gDataFetch3, gLuckyBox;
+static BOOL gAutoPlay1, gAutoPlay2, gAutoPlay3, gAutoPlay4, gObserveIM, gLuckyBox;
 
 static void FDDumpRuntimeInfo(void) {
     @autoreleasepool {
-        NSArray *keywords = @[@"RedPacket", @"redPacket", @"LuckyBag", @"luckyBag",
-                              @"HongBao", @"hongbao", @"Packet", @"Lucky", @"Bag",
-                              @"Lottery", @"lottery", @"TreasureBox",
-                              @"LuckyBox", @"luckyBox", @"Rush", @"rush", @"FuDai", @"fudai"];
+        NSArray *keywords = @[@"RedPacket", @"LuckyBag", @"HongBao", @"Lucky", @"Lottery",
+                              @"LuckyBox", @"Rush", @"FuDai", @"AutoPlay"];
         unsigned int count = 0;
         Class *classes = objc_copyClassList(&count);
         NSMutableString *out = [NSMutableString string];
         [out appendFormat:@"totalClasses=%u\n", count];
-        [out appendFormat:@"targetClass IESLiveLuckyBoxServiceManager = %@\n",
+        [out appendFormat:@"IESLiveLuckyBoxServiceManager=%@\n",
             NSClassFromString(@"IESLiveLuckyBoxServiceManager") ? @"FOUND" : @"MISSING"];
-        [out appendFormat:@"visibleNodes=%ld\n", (long)[FDScanner visibleNodeCount]];
+        [out appendFormat:@"AWEFeedIPhoneAutoPlayManager=%@\n",
+            NSClassFromString(@"AWEFeedIPhoneAutoPlayManager") ? @"FOUND" : @"MISSING"];
+        [out appendFormat:@"AWEFeedTableViewController=%@\n",
+            NSClassFromString(@"AWEFeedTableViewController") ? @"FOUND" : @"MISSING"];
         for (unsigned int i = 0; i < count; i++) {
             NSString *name = NSStringFromClass(classes[i]);
             BOOL hit = NO;
@@ -1459,9 +1507,8 @@ static void FDDumpRuntimeInfo(void) {
         free(classes);
         NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
         NSString *file = [paths.firstObject stringByAppendingPathComponent:@"fudai_dump.txt"];
-        NSError *err = nil;
-        BOOL ok = [out writeToFile:file atomically:YES encoding:NSUTF8StringEncoding error:&err];
-        NSLog(@"[FuDai] runtime dump %@ -> %@ (%lu bytes)", ok ? @"OK" : err, file, (unsigned long)out.length);
+        [out writeToFile:file atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        NSLog(@"[FuDai] dump -> %@", file);
     }
 }
 
@@ -1471,17 +1518,16 @@ static void FDWriteBootMarker(void) {
         NSMutableString *out = [NSMutableString string];
         [out appendFormat:@"boot=%@\n", [NSDate date]];
         [out appendFormat:@"bundle=%@\n", NSBundle.mainBundle.bundleIdentifier ?: @"(nil)"];
-        [out appendFormat:@"enabled=%@ debug=%@ browse=%@\n",
+        [out appendFormat:@"enabled=%@ debug=%@ autoplay=%@ mode=%ld\n",
             [d objectForKey:FDEnabledKey] ?: @"<unset>",
             [d objectForKey:FDDebugKey] ?: @"<unset>",
-            [d objectForKey:FDBrowseKey] ?: @"<unset>"];
-        [out appendFormat:@"keywords=%@ comments=%@\n",
-            [d stringForKey:FDKeywordKey] ?: @"<unset>",
-            [d stringForKey:FDCommentsKey] ?: @"<unset>"];
-        [out appendFormat:@"hooks compTapped=%d fetch2=%d fetch3=%d luckyBox=%d\n",
-            gCompTapped, gDataFetch2, gDataFetch3, gLuckyBox];
-        [out appendFormat:@"classes luckyBoxMgr=%@\n",
-            NSClassFromString(@"IESLiveLuckyBoxServiceManager") ? @"FOUND" : @"MISSING"];
+            [d objectForKey:FDAutoplayKey] ?: @"<unset>",
+            (long)FDNum(FDModeKey, 5)];
+        [out appendFormat:@"hooks autoplay=%d%d%d%d observeIM=%d luckyBox=%d\n",
+            gAutoPlay1, gAutoPlay2, gAutoPlay3, gAutoPlay4, gObserveIM, gLuckyBox];
+        [out appendFormat:@"classes luckyBoxMgr=%@ autoPlayMgr=%@\n",
+            NSClassFromString(@"IESLiveLuckyBoxServiceManager") ? @"FOUND" : @"MISSING",
+            NSClassFromString(@"AWEFeedIPhoneAutoPlayManager") ? @"FOUND" : @"MISSING"];
         NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
         NSString *file = [paths.firstObject stringByAppendingPathComponent:@"fudai_boot.txt"];
         [out writeToFile:file atomically:YES encoding:NSUTF8StringEncoding error:nil];
@@ -1490,23 +1536,31 @@ static void FDWriteBootMarker(void) {
 }
 
 static void FDInitHooks(void) {
-    Class comp = NSClassFromString(@"AWEIMDouyinRedPacketComponent");
-    if (!gCompTapped && comp && [comp instancesRespondToSelector:@selector(redPacketDidTapped)]) {
-        gCompTapped = YES; %init(GComponentTapped);
-        FDLog(@"hooked redPacketDidTapped");
-    }
-    Class dm = NSClassFromString(@"AWEIMDouyinRedPacketDataManager");
-    if (!gDataFetch2 && dm && [dm instancesRespondToSelector:@selector(fetchRedPacketInfoWithOrderId:completion:)]) {
-        gDataFetch2 = YES; %init(GDataFetch2);
-    }
-    if (!gDataFetch3 && dm && [dm instancesRespondToSelector:@selector(fetchRedPacketInfoWithOrderId:params:completion:)]) {
-        gDataFetch3 = YES; %init(GDataFetch3);
+    if (!gObserveIM && NSClassFromString(@"AWEIMDouyinRedPacketComponent")) {
+        gObserveIM = YES; %init(GObserveIM);
     }
     Class lbm = NSClassFromString(@"IESLiveLuckyBoxServiceManager");
     if (!gLuckyBox && lbm && [lbm instancesRespondToSelector:@selector(messageReceived:)]) {
         gLuckyBox = YES; %init(GLuckyBoxManager);
         FDLog(@"hooked IESLiveLuckyBoxServiceManager");
     }
+    if (!gAutoPlay1 && NSClassFromString(@"AWEAwemeDetailTableViewController")) {
+        gAutoPlay1 = YES; %init(GAutoPlay1);
+    }
+    if (!gAutoPlay2 && NSClassFromString(@"AWEAwemeDetailContainerPlayControlConfig")) {
+        gAutoPlay2 = YES; %init(GAutoPlay2);
+    }
+    if (!gAutoPlay3 && NSClassFromString(@"AWEFeedIPhoneAutoPlayManager")) {
+        gAutoPlay3 = YES; %init(GAutoPlay3);
+    }
+    if (!gAutoPlay4 && NSClassFromString(@"AWEFeedModuleService")) {
+        gAutoPlay4 = YES; %init(GAutoPlay4);
+    }
+    if ((gAutoPlay1 || gAutoPlay2 || gAutoPlay3 || gAutoPlay4) &&
+        !(gAutoPlay1 && gAutoPlay2 && gAutoPlay3 && gAutoPlay4)) {
+        // 部分安装也继续；全部缺失时静默（老版本抖音类名不同）
+    }
+    if (gAutoPlay3 || gAutoPlay4) FDLog(@"autoplay guard hooks installed (%d%d%d%d)", gAutoPlay1, gAutoPlay2, gAutoPlay3, gAutoPlay4);
 }
 
 %ctor {
@@ -1514,31 +1568,33 @@ static void FDInitHooks(void) {
         [NSUserDefaults.standardUserDefaults registerDefaults:@{
             FDEnabledKey: @NO,
             FDDebugKey: @NO,
-            FDKeywordKey: @"福袋",
-            FDBrowseKey: @YES,
-            FDWatchMinKey: @1,
-            FDWatchMaxKey: @5,
-            FDGapMinKey: @1,
-            FDGapMaxKey: @3,
-            FDPLikeKey: @35,
-            FDPFollowKey: @10,
-            FDPProfileKey: @10,
-            FDPCommentKey: @20,
-            FDPFavKey: @5,
-            FDPShareKey: @3,
-            FDLiveLikeMinKey: @2,
-            FDLiveLikeMaxKey: @10,
-            FDLiveActProbKey: @3,
-            FDMinCoinsKey: @10,
-            FDMaxRoomKey: @1000,
+            FDAutoplayKey: @YES,
+            FDModeKey: @5,
+            FDGrabMinKey: @60,
+            FDBrowseMinKey: @10,
+            FDRestMinKey: @0,
+            FDDiaAttendKey: @50,
+            FDDiaRewardKey: @5,
+            FDDiaLimitMinKey: @4,
+            FDSupAttendKey: @100,
+            FDSupLimitMinKey: @15,
+            FDMinSuperKey: @50,
+            FDMaxSuperKey: @99999,
+            FDMaxRoomKey: @200000,
             FDFilterRoomKey: @NO,
-            FDNurtureKey: @0,
-            FDCommentsKey: @"真好啊/值得看这个/主播我看你直播好久了/666",
-            FDDelayKey: @0,
-            FDCooldownKey: @20,
-            FDDailyLimitKey: @30
+            FDWaitRoomKey: @5,
+            FDMaxSwitchKey: @60,
+            FDLikeRateKey: @30,
+            FDLikeMinKey: @5,
+            FDLikeMaxKey: @50,
+            FDCmtRateKey: @0,
+            FDCommentsKey: @"主播太帅了/真好/太完美了/优秀/Perfect!",
+            FDSearchKey: @"带货直播间",
+            FDAttendModeKey: @6,
+            FDFansTeamKey: @YES,
+            FDFansYuanKey: @2000
         }];
-        NSLog(@"[FuDai] loaded bundle=%@", NSBundle.mainBundle.bundleIdentifier);
+        NSLog(@"[FuDai] 0.7.0 loaded bundle=%@", NSBundle.mainBundle.bundleIdentifier);
 
         FDInitHooks();
 
