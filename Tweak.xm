@@ -356,14 +356,14 @@ static NSInteger FDParseSeconds(NSString *text) {
             CGRect vis = CGRectIntersection(fw, w.bounds);
             if (vis.size.width <= 4 || vis.size.height <= 4) continue;
 
-            // 页面判据（text 与 a11y 都查，不限尺寸）
+            // 页面判据（text 与 a11y 都查；a11y 为 nil 时禁止匹配——nil 消息返回 0 会被误判命中）
             NSString *a11y = v.accessibilityLabel;
             for (NSString *marker in FDPageMarkers()) {
                 if (pass.markerTexts[marker]) continue;
-                if ([a11y rangeOfString:marker].location != NSNotFound) { FDNoteMarker(pass, marker, a11y); continue; }
+                if (a11y.length > 0 && [a11y rangeOfString:marker].location != NSNotFound) { FDNoteMarker(pass, marker, a11y); continue; }
                 if ([v isKindOfClass:UILabel.class]) {
                     NSString *t = ((UILabel *)v).text;
-                    if ([t rangeOfString:marker].location != NSNotFound) FDNoteMarker(pass, marker, t);
+                    if (t.length > 0 && [t rangeOfString:marker].location != NSNotFound) FDNoteMarker(pass, marker, t);
                 }
             }
 
@@ -654,8 +654,18 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
     }
     [FDScanner runPass:pass];
 
+    // 混合页面判定：pass 文本判据 + 顶层 VC 类名（iOS 直播页/广场类名含 Live，feed 含 Feed）
+    UIViewController *topVC = FDTopVC();
+    NSString *topCls = NSStringFromClass([topVC class]);
+    FDPage page = pass.page;
+    if (page == FDPageUnknown) {
+        BOOL clsLive = ([topCls rangeOfString:@"Live" options:NSCaseInsensitiveSearch].location != NSNotFound);
+        BOOL clsFeed = ([topCls rangeOfString:@"Feed" options:NSCaseInsensitiveSearch].location != NSNotFound);
+        if (clsLive) page = (pass.markerTexts[@"在线观众"] ? FDPageLive : FDPagePlaza);
+        else if (clsFeed) page = FDPageVideo;
+    }
     static NSInteger sPollTick = 0;
-    if (++sPollTick % 30 == 1) FDLog(@"poll: page=%ld phase=%ld roomStage=%ld", (long)pass.page, (long)gFDPhase, (long)self->_roomStage);
+    if (++sPollTick % 30 == 1) FDLog(@"poll: cls=%@ page=%ld phase=%ld roomStage=%ld", topCls, (long)page, (long)gFDPhase, (long)self->_roomStage);
 
     if (gFDPhase == FDPhaseBrowse) {
         [self browseTick:pass];
@@ -663,8 +673,7 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
     }
     if (mode == 3) { [self setStatus:@"养号模式 · 刷视频中"]; return; }
 
-    // Grab 阶段
-    [self grabTick:pass];
+    [self grabTick:pass page:page topCls:topCls];
 }
 
 #pragma mark Browse：原生自动连播（门卫 hook 生效），引擎只盯页面
@@ -681,10 +690,13 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
 
 #pragma mark Grab：进房 + 房内循环 + 抢
 
-- (void)grabTick:(FDScanPass *)pass {
-    FDLog(@"grab: page=%ld bag=%d claim=%d cleanup=%d markers=%@",
-          (long)pass.page, pass.bagHit != nil, pass.claimHit != nil, pass.cleanupHit != nil,
-          pass.markerTexts.allKeys);
+- (void)grabTick:(FDScanPass *)pass page:(FDPage)page topCls:(NSString *)topCls {
+    static NSInteger sLogTick = 0;
+    if (++sLogTick % 5 == 1) {
+        FDLog(@"grab: page=%ld bag=%d claim=%d cleanup=%d markers=%@",
+              (long)page, pass.bagHit != nil, pass.claimHit != nil, pass.cleanupHit != nil,
+              pass.markerTexts.allKeys);
+    }
 
     // 1) 弹窗/开奖结果优先（安卓 closeRegBagNote）
     if (pass.cleanupHit) {
@@ -700,30 +712,65 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
     }
 
     // 2) 页面路由
-    if (pass.page == FDPagePlaza) {
-        UIView *card = nil;
-        for (NSString *m in pass.markerTexts) {
-            if ([m isEqualToString:@"点击进入直播间"]) { card = pass.a11yHits[@"card"] ?: pass.claimHit; break; }
-        }
-        // 广场：直接点"点击进入直播间"所在卡
-        UIView *plazaHint = [self findPlazaCardHint];
-        UIView *target = plazaHint ?: card;
-        if (target && (!self->_nextEnterTry || [NSDate date] >= self->_nextEnterTry)) {
-            self->_nextEnterTry = [NSDate dateWithTimeIntervalSinceNow:8.0];
-            if ([FDTap tapView:target]) {
-                [self setStatus:@"直播广场 · 进房"];
-                FDLog(@"plaza: card tapped");
-            }
-        }
+    if (page == FDPageLive) {
+        [self roomTick:pass];
         return;
     }
-    if (pass.page == FDPageVideo || pass.page == FDPageMenu || pass.page == FDPageUser || pass.page == FDPageUnknown) {
+    if (page == FDPagePlaza) {
+        [self plazaTick];
+        return;
+    }
+    if (page == FDPageVideo || page == FDPageMenu || page == FDPageUser) {
         [self enterRoomFromFeed];
         return;
     }
 
-    // 3) Live 页：房内主循环
-    [self roomTick:pass];
+    // 3) Unknown：连续 5 tick → 深链回推荐页纠偏
+    self->_unknownTicks++;
+    if (self->_unknownTicks >= 5) {
+        self->_unknownTicks = 0;
+        [self setStatus:@"页面异常 · 回推荐页"];
+        FDLog(@"grab: unknown page (top=%@), deep-link to feed", topCls);
+        [self exitRoomToFeed];
+    }
+}
+
+// 直播广场：点屏幕上半部Probe点的第一张大卡（iOS 广场没有安卓的"点击进入直播间"提示文字）
+- (void)plazaTick {
+    if (self->_nextEnterTry && [NSDate date] < self->_nextEnterTry) return;
+    self->_nextEnterTry = [NSDate dateWithTimeIntervalSinceNow:10.0];
+    CGSize screen = UIScreen.mainScreen.bounds.size;
+    UIScrollView *pager = [FDScanner fullPageVerticalScrollInTopVC];
+    UIView *card = nil;
+    if (pager) {
+        CGRect probe = CGRectMake(screen.width * 0.5 - 5, screen.height * 0.35 - 5, 10, 10);
+        NSMutableArray *stack = [NSMutableArray arrayWithObject:pager];
+        NSInteger budget = 400;
+        while (stack.count > 0 && budget > 0 && !card) {
+            UIView *v = stack.lastObject;
+            [stack removeLastObject];
+            budget--;
+            if (![v isKindOfClass:UIView.class]) continue;
+            if (v != pager) {
+                if (v.hidden || v.alpha < 0.2) continue;
+                CGRect abs = [v convertRect:v.bounds toView:nil];
+                if (CGRectContainsPoint(abs, probe) &&
+                    v.bounds.size.width > screen.width * 0.3 &&
+                    v.bounds.size.height > screen.height * 0.15) {
+                    card = v;
+                    break;
+                }
+            }
+            for (UIView *s in [v.subviews reverseObjectEnumerator]) [stack addObject:s];
+        }
+    }
+    if (card && [FDTap tapView:card]) {
+        [self setStatus:@"直播广场 · 进房"];
+        FDLog(@"plaza: card tapped %@", NSStringFromClass([card class]));
+    } else {
+        FDLog(@"plaza: no card found, back to feed");
+        [self exitRoomToFeed];
+    }
 }
 
 - (UIView *)findPlazaCardHint {
@@ -738,7 +785,7 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
 - (void)enterRoomFromFeed {
     if (self->_nextEnterTry && [NSDate date] < self->_nextEnterTry) return;
     self->_nextEnterTry = [NSDate dateWithTimeIntervalSinceNow:8.0];
-    // ① 直播 tab：a11y 以 "直播，" 开头（安卓同款判据）
+    // ① 直播 tab：iOS 底部 tab 标题/标签为 "直播"；兼容安卓式 "直播，" 前缀
     UIView *tab = [self findLiveTab];
     if (tab) {
         if ([FDTap tapView:tab]) {
@@ -747,22 +794,42 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
             return;
         }
     }
-    // ② 深链搜索（fudai.searchKey）
-    NSString *key = FDStr(FDSearchKey, @"带货直播间");
-    FDLog(@"enter: live tab not found, try search '%@'", key);
-    // iOS 标准版 search 深链未验证，先回 feed 兜底
-    [self exitRoomToFeed];
+    // ② 没找到 tab：推荐页上可能直接有"直播中"卡片徽标（点它同样能进直播间）
+    UIView *badge = nil;
+    @try {
+        FDScanPass *p = [FDScanPass new];
+        p.claimContains = @[@"直播中"];
+        p.deadline = CFAbsoluteTimeGetCurrent() + 0.05;
+        [FDScanner runPass:p];
+        badge = p.claimHit;
+    } @catch (NSException *e) { }
+    if (badge && [FDTap tapView:badge]) {
+        [self setStatus:@"进房：直播卡片"];
+        FDLog(@"enter: live badge tapped");
+        return;
+    }
+    // ③ 都没有：等下个 tick 重试（rate-limit 已在头部）
+    FDLog(@"enter: no live tab/badge this tick");
 }
 
 - (UIView *)findLiveTab {
+    // iOS：底部 UITabBarButton 的标题/标签是 "直播"；a11y 匹配 contains "直播"（会命中 tab 及
+    // 页面上其他含"直播"的小控件，下面用精确校验过滤）
     FDScanPass *p = [FDScanPass new];
-    p.claimContains = @[@"直播，"];
+    p.a11yNeed = @[@"直播"];
     p.deadline = CFAbsoluteTimeGetCurrent() + 0.05;
     [FDScanner runPass:p];
-    UIView *hit = p.claimHit;
+    UIView *hit = p.a11yHits[@"直播"];
     if (hit) {
         NSString *s = hit.accessibilityLabel ?: @"";
-        if ([s hasPrefix:@"直播，"]) return hit; // 底部/顶部 tab 的 a11y 形如 "直播，按钮"
+        if ([s isEqualToString:@"直播"] || [s hasPrefix:@"直播，"] || [s isEqualToString:@"直播，按钮"]) {
+            return hit;
+        }
+        // UITabBarButton 标题兜底
+        if ([hit isKindOfClass:UIControl.class] &&
+            [[(UIControl *)hit isKindOfClass:UIButton.class] ? [(UIButton *)hit currentTitle] : @""] isEqualToString:@"直播"]) {
+            return hit;
+        }
     }
     return nil;
 }
