@@ -753,8 +753,8 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
             if (![v isKindOfClass:UIView.class]) continue;
             if (v != pager) {
                 if (v.hidden || v.alpha < 0.2) continue;
-                CGRect abs = [v convertRect:v.bounds toView:nil];
-                if (CGRectContainsPoint(abs, probe) &&
+                CGRect absRect = [v convertRect:v.bounds toView:nil];
+                if (CGRectContainsPoint(absRect, probe) &&
                     v.bounds.size.width > screen.width * 0.3 &&
                     v.bounds.size.height > screen.height * 0.15) {
                     card = v;
@@ -822,12 +822,9 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
     UIView *hit = p.a11yHits[@"直播"];
     if (hit) {
         NSString *s = hit.accessibilityLabel ?: @"";
-        if ([s isEqualToString:@"直播"] || [s hasPrefix:@"直播，"] || [s isEqualToString:@"直播，按钮"]) {
-            return hit;
-        }
-        // UITabBarButton 标题兜底
-        if ([hit isKindOfClass:UIControl.class] &&
-            [[(UIControl *)hit isKindOfClass:UIButton.class] ? [(UIButton *)hit currentTitle] : @""] isEqualToString:@"直播"]) {
+        NSString *title = @"";
+        if ([hit isKindOfClass:UIButton.class]) title = [(UIButton *)hit currentTitle] ?: @"";
+        if ([s isEqualToString:@"直播"] || [s hasPrefix:@"直播，"] || [title isEqualToString:@"直播"]) {
             return hit;
         }
     }
