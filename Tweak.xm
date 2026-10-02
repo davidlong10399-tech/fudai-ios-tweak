@@ -182,7 +182,10 @@ static BOOL FDTapViaCollectionView(UIView *view) {
     @try {
         NSIndexPath *ip = [cv indexPathForCell:cell];
         if (!ip) return NO;
-        [cv selectItemAtIndexPath:ip atScrollPosition:(UICollectionViewScrollPositionCenteredVertically | UICollectionViewScrollPositionCenteredHorizontally) animated:YES];
+        // 精简 SDK 头未声明该选择器，走 msgSend
+        ((void (*)(id, SEL, id, NSInteger, BOOL))objc_msgSend)(
+            cv, @selector(selectItemAtIndexPath:atScrollPosition:animated:),
+            ip, UICollectionViewScrollPositionCenteredVertically | UICollectionViewScrollPositionCenteredHorizontally, YES);
         id del = cv.delegate;
         if (del && [del respondsToSelector:@selector(collectionView:didSelectItemAtIndexPath:)]) {
             ((void (*)(id, SEL, id, id))objc_msgSend)(del, @selector(collectionView:didSelectItemAtIndexPath:), cv, ip);
