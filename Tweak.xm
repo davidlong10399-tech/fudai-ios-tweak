@@ -1079,13 +1079,6 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
     [self exitRoomToFeed];
 }
 
-- (void)fireScrollEndFor:(UIScrollView *)sv {
-    id del = sv.delegate;
-    if (del && [del respondsToSelector:@selector(scrollViewDidEndDecelerating:)]) {
-        ((void (*)(id, SEL, id))objc_msgSend)(del, @selector(scrollViewDidEndDecelerating:), sv);
-    }
-}
-
 - (void)exitRoomToFeed {
     UIViewController *top = FDTopVC();
     BOOL exited = NO;
