@@ -167,6 +167,35 @@ static BOOL FDInvokeGestureTargets(UIGestureRecognizer *gr) {
 + (BOOL)tapView:(UIView *)view;
 @end
 
+// CollectionView 项兜底：tab 项/广场卡片这类"由 collectionView didSelect 驱动"的视图
+// （程序化 selectItemAtIndexPath 不会触发 delegate，需手动补发 didSelect 回调）
+static BOOL FDTapViaCollectionView(UIView *view) {
+    UIView *v = view;
+    UICollectionViewCell *cell = nil;
+    UICollectionView *cv = nil;
+    for (int i = 0; i < 8 && v; i++) {
+        if (!cell && [v isKindOfClass:UICollectionViewCell.class]) cell = (UICollectionViewCell *)v;
+        if ([v isKindOfClass:UICollectionView.class]) { cv = (UICollectionView *)v; break; }
+        v = v.superview;
+    }
+    if (!cell || !cv) return NO;
+    @try {
+        NSIndexPath *ip = [cv indexPathForCell:cell];
+        if (!ip) return NO;
+        [cv selectItemAtIndexPath:ip atScrollPosition:(UICollectionViewScrollPositionCenteredVertically | UICollectionViewScrollPositionCenteredHorizontally) animated:YES];
+        id del = cv.delegate;
+        if (del && [del respondsToSelector:@selector(collectionView:didSelectItemAtIndexPath:)]) {
+            ((void (*)(id, SEL, id, id))objc_msgSend)(del, @selector(collectionView:didSelectItemAtIndexPath:), cv, ip);
+            FDLog(@"tap: collectionView didSelect %@ item=%ld", NSStringFromClass([cv class]), (long)ip.item);
+            return YES;
+        }
+        return NO;
+    } @catch (NSException *e) {
+        FDLog(@"tap: collectionView exception %@", e);
+        return NO;
+    }
+}
+
 @implementation FDTap
 + (BOOL)tapView:(UIView *)view {
     UIView *v = view;
@@ -196,6 +225,7 @@ static BOOL FDInvokeGestureTargets(UIGestureRecognizer *gr) {
         } @catch (NSException *e) { }
         v = v.superview;
     }
+    if (FDTapViaCollectionView(view)) return YES;
     FDLog(@"tap: no target %@", NSStringFromClass([view class]));
     return NO;
 }
