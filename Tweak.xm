@@ -873,7 +873,7 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
 
 // 直播广场：点屏幕上半部Probe点的第一张大卡（iOS 广场没有安卓的"点击进入直播间"提示文字）
 - (void)plazaTick {
-    if (self->_nextEnterTry && [NSDate date] < self->_nextEnterTry) return;
+    if (self->_nextEnterTry && [[NSDate date] compare:self->_nextEnterTry] == NSOrderedAscending) return;
     self->_nextEnterTry = [NSDate dateWithTimeIntervalSinceNow:10.0];
     CGSize screen = UIScreen.mainScreen.bounds.size;
     UIScrollView *pager = [FDScanner fullPageVerticalScrollInTopVC];
@@ -919,7 +919,7 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
 }
 
 - (void)enterRoomFromFeed {
-    if (self->_nextEnterTry && [NSDate date] < self->_nextEnterTry) return;
+    if (self->_nextEnterTry && [[NSDate date] compare:self->_nextEnterTry] == NSOrderedAscending) return;
     self->_nextEnterTry = [NSDate dateWithTimeIntervalSinceNow:8.0];
     // ① 直播 tab：iOS 底部 tab 标题/标签为 "直播"；兼容安卓式 "直播，" 前缀
     UIView *tab = [self findLiveTab];
@@ -1036,7 +1036,7 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
 }
 
 - (void)scheduleRoomSwitch {
-    if (self->_nextRoomSwitch && [NSDate date] < self->_nextRoomSwitch) return;
+    if (self->_nextRoomSwitch && [[NSDate date] compare:self->_nextRoomSwitch] == NSOrderedAscending) return;
     self->_nextRoomSwitch = [NSDate dateWithTimeIntervalSinceNow:1.0];
     self->_roomSwitches++;
     if (self->_roomSwitches > (NSInteger)FDNum(FDMaxSwitchKey, 60)) {
@@ -1099,7 +1099,7 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
 #pragma mark 面板流程（普通/超级，安卓 §4.7.1/4.7.2 精简照抄）
 
 - (void)panelTick:(FDScanPass *)pass {
-    if ([NSDate date] > self->_panelDeadline) {
+    if ([[NSDate date] compare:self->_panelDeadline] == NSOrderedDescending) {
         FDLog(@"panel: deadline exceeded, switch room");
         self->_roomStage = FDRoomScan;
         [self scheduleRoomSwitch];
