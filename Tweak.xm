@@ -743,7 +743,7 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
     UIScrollView *pager = [FDScanner fullPageVerticalScrollInTopVC];
     UIView *card = nil;
     if (pager) {
-        CGRect probe = CGRectMake(screen.width * 0.5 - 5, screen.height * 0.35 - 5, 10, 10);
+        CGPoint probe = CGPointMake(screen.width * 0.5, screen.height * 0.35);
         NSMutableArray *stack = [NSMutableArray arrayWithObject:pager];
         NSInteger budget = 400;
         while (stack.count > 0 && budget > 0 && !card) {
