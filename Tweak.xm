@@ -61,6 +61,7 @@ static NSString * const FDCmtRateKey      = @"fudai.liveCommentRate";
 static NSString * const FDCommentsKey     = @"fudai.comments";
 static NSString * const FDSearchKey       = @"fudai.searchKey";
 static NSString * const FDAttendModeKey   = @"fudai.attendMode";      // 6=立马
+static NSString * const FDWatchSecKey     = @"fudai.watchSeconds";    // 每条视频秒数
 static NSString * const FDFansTeamKey     = @"fudai.fansTeam";
 static NSString * const FDFansYuanKey     = @"fudai.fansTeamYuan";
 
@@ -527,6 +528,7 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
     NSInteger _roomSwitches;     // 换房计数（60 上限）
     NSDate *_nextRoomSwitch;     // 换房冷却
     NSDate *_nextEnterTry;       // 进房重试冷却
+    NSDate *_nextFeedAdvance;    // 刷视频期：下一条视频时间
     NSDate *_lastLuckySignal;    // LuckyBox hook 信号
     BOOL _likedThisRoom;         // 本房已点赞
     BOOL _commentedThisRoom;     // 本房已评论
@@ -718,7 +720,108 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
         [self setStatus:@"刷视频期 · 退出直播间"];
         return;
     }
-    [self setStatus:@"刷视频期 · 原生连播中"];
+    NSDate *now = [NSDate date];
+    if (!self->_nextFeedAdvance) self->_nextFeedAdvance = [now dateByAddingTimeInterval:FDNum(FDWatchSecKey, 5)];
+    if ([now compare:self->_nextFeedAdvance] == NSOrderedAscending) {
+        [self setStatus:@"刷视频期 · 观看中"];
+        return;
+    }
+    self->_nextFeedAdvance = [now dateByAddingTimeInterval:FDNum(FDWatchSecKey, 5)];
+    [self setStatus:@"刷视频 · 下一个"];
+    [self browseAdvanceFeed];
+}
+
+// 安卓 UpToAnotherVideo 同款节奏：每条视频固定秒数后切下一个（验证链：官方方法→Row/Item→强滚，全部补发回调）
+- (void)browseAdvanceFeed {
+    UIScrollView *sv = [FDScanner fullPageVerticalScrollInTopVC];
+    if (!sv) { FDLog(@"browse: no feed scroll in topVC"); return; }
+    CGPoint before = sv.contentOffset;
+
+    // 路径1：scrollToNextVideo（抖音优化广告跳过模块同款；无效则降级）
+    UIViewController *top = FDTopVC();
+    SEL sel = NSSelectorFromString(@"scrollToNextVideo");
+    if ([top respondsToSelector:sel]) {
+        #pragma clang diagnostic push
+        #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+        [top performSelector:sel];
+        #pragma clang diagnostic pop
+        __weak UIScrollView *wsv = sv;
+        __weak typeof(self) ws = self;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.9 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            UIScrollView *s2 = wsv;
+            if (!s2 || !ws) return;
+            if (fabs(s2.contentOffset.y - before.y) > 60) { FDLog(@"browse: advanced via scrollToNextVideo"); return; }
+            [ws browseAdvanceFallback:1 sv:s2 from:before];
+        });
+        return;
+    }
+    [self browseAdvanceFallback:1 sv:sv from:before];
+}
+
+- (void)browseAdvanceFallback:(NSInteger)step sv:(UIScrollView *)sv from:(CGPoint)before {
+    switch (step) {
+        case 1: {
+            // 路径2：Table/Collection 官方滚动 API + 补发结束回调
+            BOOL scrolled = NO;
+            @try {
+                NSIndexPath *targetIp = nil;
+                if ([sv isKindOfClass:UITableView.class]) {
+                    UITableView *tv = (UITableView *)sv;
+                    NSInteger page = (NSInteger)round(sv.contentOffset.y / MAX(sv.bounds.size.height, 1));
+                    NSInteger n = [tv numberOfRowsInSection:0];
+                    if (page + 1 < n) { targetIp = [NSIndexPath indexPathForRow:page + 1 inSection:0]; [tv scrollToRowAtIndexPath:targetIp atScrollPosition:UITableViewScrollPositionTop animated:YES]; scrolled = YES; }
+                } else if ([sv isKindOfClass:UICollectionView.class]) {
+                    UICollectionView *cv = (UICollectionView *)sv;
+                    NSInteger page = (NSInteger)round(sv.contentOffset.y / MAX(sv.bounds.size.height, 1));
+                    NSInteger n = 0;
+                    id src = cv.dataSource;
+                    if (src && [src respondsToSelector:@selector(collectionView:numberOfItemsInSection:)]) {
+                        n = ((NSInteger (*)(id, SEL, id, NSInteger))objc_msgSend)(src, @selector(collectionView:numberOfItemsInSection:), cv, 0);
+                    }
+                    if (page + 1 < n) { targetIp = [NSIndexPath indexPathForItem:page + 1 inSection:0]; ((void (*)(id, SEL, id, NSInteger, NSInteger, BOOL))objc_msgSend)(cv, @selector(scrollToItemAtIndexPath:atScrollPosition:animated:), targetIp, UICollectionViewScrollPositionTop, 0, YES); scrolled = YES; }
+                }
+            } @catch (NSException *e) {
+                FDLog(@"browse: row/item exception %@", e);
+            }
+            if (scrolled) {
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.55 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                    [self fireScrollEndFor:sv];
+                });
+                [self verifyBrowseAdvance:step sv:sv from:before];
+                return;
+            }
+            [self browseAdvanceFallback:2 sv:sv from:before];
+            return;
+        }
+        default: {
+            // 路径3：强滚 + 补发结束回调
+            CGPoint off = sv.contentOffset;
+            off.y += sv.bounds.size.height;
+            [sv setContentOffset:off animated:NO];
+            [self fireScrollEndFor:sv];
+            FDLog(@"browse: fallback scrolled y=%.0f + end callback", off.y);
+            return;
+        }
+    }
+}
+
+- (void)verifyBrowseAdvance:(NSInteger)step sv:(UIScrollView *)sv from:(CGPoint)before {
+    __weak UIScrollView *wsv = sv;
+    __weak typeof(self) ws = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.9 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        UIScrollView *s2 = wsv;
+        if (!s2 || !ws) return;
+        if (fabs(s2.contentOffset.y - before.y) > 60) { FDLog(@"browse: advanced step %ld", (long)step); return; }
+        [ws browseAdvanceFallback:step + 1 sv:s2 from:before];
+    });
+}
+
+- (void)fireScrollEndFor:(UIScrollView *)sv {
+    id del = sv.delegate;
+    if (del && [del respondsToSelector:@selector(scrollViewDidEndDecelerating:)]) {
+        ((void (*)(id, SEL, id))objc_msgSend)(del, @selector(scrollViewDidEndDecelerating:), sv);
+        FDLog(@"browse: fired scroll end");
+    }
 }
 
 #pragma mark Grab：进房 + 房内循环 + 抢
@@ -1381,7 +1484,8 @@ static void FDDumpRuntimeInfo(void);
     y = [self numRowIn:scroll y:y key:FDAttendModeKey label:@"参与时机(6=立马)" def:@6];
     y = [self switchRowIn:scroll y:y key:FDFansTeamKey label:@"允许加粉丝团"];
     y = [self numRowIn:scroll y:y key:FDFansYuanKey label:@"加团条件参考价(元)" def:@2000];
-    y = [self switchRowIn:scroll y:y key:FDAutoplayKey label:@"原生自动连播(刷视频)"];
+    y = [self switchRowIn:scroll y:y key:FDAutoplayKey label:@"原生自动连播(视频播完自切)"];
+    y = [self numRowIn:scroll y:y key:FDWatchSecKey label:@"刷视频秒/条(强切)" def:@5];
     y = [self fieldRowIn:scroll y:y key:FDSearchKey label:@"搜索关键词" value:FDStr(FDSearchKey, @"带货直播间")];
     y = [self fieldRowIn:scroll y:y key:FDCommentsKey label:@"评论模板(/分隔)" value:FDStr(FDCommentsKey, @"主播太帅了/真好/太完美了/优秀/Perfect!")];
     y = [self switchRowIn:scroll y:y key:FDDebugKey label:@"调试日志(落盘)"];
@@ -1719,6 +1823,7 @@ static void FDInitHooks(void) {
             FDMaxRoomKey: @200000,
             FDFilterRoomKey: @NO,
             FDWaitRoomKey: @5,
+            FDWatchSecKey: @5,
             FDMaxSwitchKey: @60,
             FDLikeRateKey: @30,
             FDLikeMinKey: @5,
