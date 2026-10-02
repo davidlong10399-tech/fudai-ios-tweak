@@ -32,6 +32,17 @@ jobs:
       - name: Package rootless deb
         run: make package THEOS="$THEOS" THEOS_PACKAGE_SCHEME=rootless FINALPACKAGE=1
 
+      - name: Rebuild deb as iphoneos-arm64e
+        run: |
+          set -euo pipefail
+          deb=$(find packages -maxdepth 1 -name '*.deb' -print -quit)
+          test -n "$deb"
+          tmp=$(mktemp -d)
+          dpkg-deb -R "$deb" "$tmp/pkg"
+          sed -i '' 's/^Architecture: .*/Architecture: iphoneos-arm64e/' "$tmp/pkg/DEBIAN/control"
+          grep -q '^Architecture: iphoneos-arm64e' "$tmp/pkg/DEBIAN/control"
+          dpkg-deb -b "$tmp/pkg" "$deb"
+
       - name: Validate package layout
         run: |
           set -euo pipefail
@@ -40,7 +51,7 @@ jobs:
           arch="$(dpkg-deb -f "$deb" Architecture)"
           echo "package arch: $arch"
           case "$arch" in
-            iphoneos-arm64|iphoneos-arm64e) ;;
+            iphoneos-arm64e) ;;
             *) echo "unexpected arch: $arch"; exit 1 ;;
           esac
           # 不允许出现双重 var/jb 路径（打包错误）
