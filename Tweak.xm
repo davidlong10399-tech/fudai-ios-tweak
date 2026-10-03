@@ -1058,15 +1058,12 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
             return;
         }
     } @catch (NSException *e) { }
-    // ① 直播 tab：iOS 底部 tab 标题/标签为 "直播"；兼容安卓式 "直播，" 前缀
-    UIView *tab = [self findLiveTab];
-    if (tab) {
-        if ([FDTap tapView:tab]) {
-            [self setStatus:@"进房：切直播 tab"];
-            FDLog(@"enter: live tab tapped, verifying");
-            [self verifyEntryThenDeeplink];
-            return;
-        }
+    // ① 直播 tab：AWEFeedMultiTabSegmentedControl.setSelectedIndex / item delegate（照 AWEHP 类清单实现）
+    if ([self switchTopTabToLive]) {
+        [self setStatus:@"进房：切直播 tab"];
+        FDLog(@"enter: top tab switched, verifying");
+        [self verifyEntryThenDeeplink];
+        return;
     }
     // ② 没找到 tab：推荐页上可能直接有"直播中"卡片徽标（点它同样能进直播间）
     UIView *badge = nil;
@@ -1174,6 +1171,97 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
             FDLog(@"enter: deep link landed on %@ (not live)", cls);
         }
     });
+}
+
+// 顶部直播 tab 程序化切换（类结构来自 fudai_dump 实测）：
+//   AWEFeedMultiTabSegmentedControl.setSelectedIndex: / items[]
+//   AWEHPTopTabItemView.delegate(单参 tap/select 回调) + setSelected:
+- (BOOL)switchTopTabToLive {
+    UIViewController *top = FDTopVC();
+    if (!top || !top.viewIfLoaded) return NO;
+    Class itemCls = NSClassFromString(@"AWEHPTopTabItemView");
+    Class segCls = NSClassFromString(@"AWEFeedMultiTabSegmentedControl");
+    if (!itemCls && !segCls) return NO;
+
+    UIView *liveItem = nil;
+    id seg = nil;
+    NSMutableArray *stack = [NSMutableArray arrayWithObject:top.view];
+    NSInteger budget = 600;
+    while (stack.count > 0 && budget > 0) {
+        UIView *v = stack.lastObject;
+        [stack removeLastObject];
+        budget--;
+        if (itemCls && [v isKindOfClass:itemCls]) {
+            NSString *a = v.accessibilityLabel ?: @"";
+            if ([a isEqualToString:@"直播"] && !liveItem) liveItem = v;
+        }
+        if (segCls && [v isKindOfClass:segCls]) seg = v;
+        for (UIView *sub in [v.subviews reverseObjectEnumerator]) [stack addObject:sub];
+    }
+    if (!liveItem && !seg) { FDLog(@"tab: no top tab views found"); return NO; }
+
+    // T1: segmented 控件的 items 数组找"直播"序号 → setSelectedIndex:
+    if (seg) {
+        id items = nil;
+        @try { items = [seg valueForKey:@"items"]; } @catch (NSException *e) { }
+        NSInteger target = -1;
+        NSInteger count = -1;
+        if ([items isKindOfClass:NSArray.class]) {
+            count = (NSInteger)[items count];
+            for (NSInteger i = 0; i < count; i++) {
+                id it = [items objectAtIndex:i];
+                NSString *a = nil;
+                if ([it isKindOfClass:UIView.class]) a = [(UIView *)it accessibilityLabel];
+                @try { if (!a.length) a = [it valueForKey:@"accessibilityLabel"]; } @catch (NSException *e) { }
+                if ([a isEqualToString:@"直播"]) { target = i; break; }
+            }
+            if (target < 0 && count > 0) target = count - 1; // 直播通常在最后
+        }
+        if (target >= 0 && [seg respondsToSelector:@selector(setSelectedIndex:)]) {
+            ((void (*)(id, SEL, NSInteger))objc_msgSend)(seg, @selector(setSelectedIndex:), target);
+            FDLog(@"tab: T1 setSelectedIndex %ld of %ld", (long)target, (long)count);
+            return YES;
+        }
+    }
+
+    // T2: item 的 delegate 里找单参 tap/select 回调，传入 item；同时置 selected 态
+    if (liveItem) {
+        if ([liveItem respondsToSelector:@selector(setSelected:)]) {
+            ((void (*)(id, SEL, BOOL))objc_msgSend)(liveItem, @selector(setSelected:), YES);
+        }
+        id dlg = nil;
+        @try { dlg = [liveItem valueForKey:@"delegate"]; } @catch (NSException *e) { }
+        if (dlg) {
+            unsigned int mcount = 0;
+            Method *methods = class_copyMethodList([dlg class], &mcount);
+            for (unsigned int i = 0; i < mcount; i++) {
+                SEL s = method_getName(methods[i]);
+                NSString *name = NSStringFromSelector(s);
+                if (name.length > 30) continue;
+                NSString *lower = [name lowercaseString];
+                if (([lower containsString:@"tap"] || [lower containsString:@"select"] ||
+                     [lower containsString:@"click"] || [lower containsString:@"item"]) &&
+                    ![lower hasPrefix:@"set"] && ![lower containsString:@"did"] &&
+                    ![lower containsString:@"will"] && ![lower containsString:@"gesture"] &&
+                    ![lower containsString:@"progress"] && ![lower containsString:@"shadow"] &&
+                    ![lower containsString:@"update"]) {
+                    NSMethodSignature *sig = [dlg methodSignatureForSelector:s];
+                    if (sig && sig.numberOfArguments == 3) { // 1 个对象参数
+                        #pragma clang diagnostic push
+                        #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+                        [dlg performSelector:s withObject:liveItem];
+                        #pragma clang diagnostic pop
+                        FDLog(@"tab: T2 delegate method %@ called", name);
+                        free(methods);
+                        return YES;
+                    }
+                }
+            }
+            free(methods);
+        }
+        FDLog(@"tab: T2 no delegate handler found");
+    }
+    return NO;
 }
 
 - (UIView *)findLiveTab {
