@@ -202,6 +202,41 @@ static BOOL FDTapViaCollectionView(UIView *view) {
 }
 
 // 运行时动作搜索：自定义视图（如 tab 项）常带私有 tap/click 方法，全部常规途径失败后尝试
+// 祖先选择器兜底：父视图类里的单参 select/switch 方法（如 selectTabItem:），传入该项调用
+static BOOL FDTapViaAncestorSelector(UIView *view) {
+    UIView *v = view;
+    for (int level = 0; level < 6 && v; level++) {
+        @try {
+            Class cls = [v class];
+            unsigned int mcount = 0;
+            Method *methods = class_copyMethodList(cls, &mcount);
+            for (unsigned int i = 0; i < mcount; i++) {
+                SEL s = method_getName(methods[i]);
+                NSString *name = NSStringFromSelector(s);
+                if (name.length > 28) continue;
+                NSString *lower = [name lowercaseString];
+                if (([lower containsString:@"select"] || [lower containsString:@"switchtab"] ||
+                     [lower containsString:@"ontapitem"] || [lower containsString:@"tabitem"]) &&
+                    ![lower hasPrefix:@"set"] && ![lower containsString:@"didselect"] &&
+                    ![lower containsString:@"willselect"] && ![lower containsString:@"gesture"]) {
+                    NSMethodSignature *sig = [v methodSignatureForSelector:s];
+                    if (sig && sig.numberOfArguments == 3) { // 1 个对象参数
+                        #pragma clang diagnostic push
+                        #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+                        [v performSelector:s withObject:view];
+                        #pragma clang diagnostic pop
+                        FDLog(@"tap: ancestor selector %@ on %@", name, NSStringFromClass(cls));
+                        return YES;
+                    }
+                }
+            }
+            free(methods);
+        } @catch (NSException *e) { }
+        v = v.superview;
+    }
+    return NO;
+}
+
 static BOOL FDTapViaRuntimeAction(UIView *view) {
     @try {
         Class cls = [view class];
@@ -213,11 +248,13 @@ static BOOL FDTapViaRuntimeAction(UIView *view) {
                 NSString *name = NSStringFromSelector(s);
                 if (name.length > 24) continue;
                 NSString *lower = [name lowercaseString];
-                if (([lower containsString:@"tap"] || [lower containsString:@"click"] ||
-                     [lower containsString:@"selected"] || [lower containsString:@"selectitem"]) &&
-                    ![lower containsString:@"gesture"] && ![lower containsString:@"pan"] &&
-                    ![lower containsString:@"cancel"] && ![lower hasPrefix:@"set"] &&
-                    ![lower containsString:@"did"] && ![lower containsString:@"will"]) {
+                BOOL looksAction = ([lower hasPrefix:@"tap"] || [lower hasPrefix:@"click"] ||
+                                    [lower hasPrefix:@"ontap"] || [lower containsString:@"tapped"] ||
+                                    [lower containsString:@"clicked"] || [lower containsString:@"touchup"]);
+                if (looksAction &&
+                    ![lower containsString:@"gesture"] && ![lower hasPrefix:@"set"] &&
+                    ![lower containsString:@"cancel"] && ![lower containsString:@"did"] &&
+                    ![lower containsString:@"will"]) {
                     NSMethodSignature *sig = [view methodSignatureForSelector:s];
                     if (sig && sig.numberOfArguments == 2) { // 无参方法
                         #pragma clang diagnostic push
@@ -266,6 +303,7 @@ static BOOL FDTapViaRuntimeAction(UIView *view) {
         v = v.superview;
     }
     if (FDTapViaCollectionView(view)) return YES;
+    if (FDTapViaAncestorSelector(view)) return YES;
     if (FDTapViaRuntimeAction(view)) return YES;
     FDLog(@"tap: no target %@", NSStringFromClass([view class]));
     return NO;
@@ -963,7 +1001,8 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
     if (tab) {
         if ([FDTap tapView:tab]) {
             [self setStatus:@"进房：切直播 tab"];
-            FDLog(@"enter: live tab tapped");
+            FDLog(@"enter: live tab tapped, verifying");
+            [self verifyEntryThenDeeplink];
             return;
         }
     }
@@ -978,20 +1017,79 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
     } @catch (NSException *e) { }
     if (badge && [FDTap tapView:badge]) {
         [self setStatus:@"进房：直播卡片"];
-        FDLog(@"enter: live badge tapped");
+        FDLog(@"enter: live badge tapped, verifying");
+        [self verifyEntryThenDeeplink];
         return;
     }
-    // ③ 深链进直播间（fudai.liveScheme；手机在线时可用 uiopen 逐个验证候选路由）
-    NSString *scheme = FDStr(FDLiveSchemeKey, @"snssdk1128://live");
+    // ③ 深链进直播间（轮换候选路由，成功的会被记住优先用）
+    [self openLiveDeepLink];
+}
+
+// 点了 tab/卡片后 3 秒复查：页面没切到直播 → 深链兜底
+- (void)verifyEntryThenDeeplink {
+    __weak typeof(self) ws = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (!ws || !ws->_running) return;
+        UIViewController *top = FDTopVC();
+        NSString *cls = NSStringFromClass([top class]);
+        if ([cls rangeOfString:@"Live" options:NSCaseInsensitiveSearch].location != NSNotFound) {
+            FDLog(@"enter: verified live page (%@)", cls);
+            return;
+        }
+        FDLog(@"enter: page still %@ after tab tap, deep link fallback", cls);
+        [ws openLiveDeepLink];
+    });
+}
+
+// 深链轮换：候选路由逐个试，成功的记入 fudai.liveSchemeOK 优先使用
+- (void)openLiveDeepLink {
+    NSArray *schemes = @[@"snssdk1128://live", @"snssdk1128://livesimple", @"sslocal://live", @"snssdk1128://aweme/live"];
+    NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
+    NSInteger okIdx = (NSInteger)[d doubleForKey:@"fudai.liveSchemeOK"];
+    NSInteger idx = (NSInteger)[d doubleForKey:@"fudai.liveSchemeIdx"];
+    if (okIdx >= 0 && okIdx < (NSInteger)schemes.count) {
+        // 已验证可用的优先
+        NSString *scheme = schemes[okIdx];
+        NSURL *u = [NSURL URLWithString:scheme];
+        if (u) [UIApplication.sharedApplication openURL:u options:@{} completionHandler:nil];
+        [self setStatus:[NSString stringWithFormat:@"进房：深链(%ld)", (long)okIdx]];
+        FDLog(@"enter: deep link (known-good) %@", scheme);
+        [self verifyDeepLinkLanded:okIdx];
+        return;
+    }
+    if (idx >= (NSInteger)schemes.count) idx = 0;
+    NSString *scheme = schemes[idx];
     NSURL *u = [NSURL URLWithString:scheme];
-    if (u && scheme.length > 8) {
-        [UIApplication.sharedApplication openURL:u options:@{} completionHandler:nil];
-        [self setStatus:@"进房：深链"];
-        FDLog(@"enter: deep link %@", scheme);
-        return;
-    }
-    // ④ 都没有：等下个 tick 重试（rate-limit 已在头部）
-    FDLog(@"enter: no live tab/badge this tick");
+    if (u) [UIApplication.sharedApplication openURL:u options:@{} completionHandler:nil];
+    [self setStatus:[NSString stringWithFormat:@"进房：深链试 %ld", (long)idx]];
+    FDLog(@"enter: deep link candidate %ld %@", (long)idx, scheme);
+    __weak typeof(self) ws = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (!ws || !ws->_running) return;
+        UIViewController *top = FDTopVC();
+        NSString *cls = NSStringFromClass([top class]);
+        if ([cls rangeOfString:@"Live" options:NSCaseInsensitiveSearch].location != NSNotFound) {
+            [d setDouble:idx forKey:@"fudai.liveSchemeOK"];
+            FDLog(@"enter: deep link %ld WORKS, saved", (long)idx);
+        } else {
+            [d setDouble:idx + 1 forKey:@"fudai.liveSchemeIdx"];
+            FDLog(@"enter: deep link %ld landed on %@, rotating", (long)idx, cls);
+        }
+    });
+}
+
+- (void)verifyDeepLinkLanded:(NSInteger)idx {
+    __weak typeof(self) ws = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (!ws || !ws->_running) return;
+        UIViewController *top = FDTopVC();
+        NSString *cls = NSStringFromClass([top class]);
+        if ([cls rangeOfString:@"Live" options:NSCaseInsensitiveSearch].location != NSNotFound) {
+            FDLog(@"enter: deep link landed live (%@)", cls);
+        } else {
+            FDLog(@"enter: deep link landed on %@ (not live)", cls);
+        }
+    });
 }
 
 - (UIView *)findLiveTab {
