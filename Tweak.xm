@@ -219,7 +219,8 @@ static BOOL FDTapViaAncestorSelector(UIView *view) {
                      [lower containsString:@"ontapitem"] || [lower containsString:@"tabitem"]) &&
                     ![lower hasPrefix:@"set"] && ![lower containsString:@"didselect"] &&
                     ![lower containsString:@"willselect"] && ![lower containsString:@"gesture"] &&
-                    ![lower containsString:@"progress"]) {
+                    ![lower containsString:@"progress"] && ![lower containsString:@"shadow"] &&
+                    ![lower containsString:@"update"] && ![lower containsString:@"path"]) {
                     NSMethodSignature *sig = [v methodSignatureForSelector:s];
                     if (sig && sig.numberOfArguments == 3) { // 1 个对象参数
                         #pragma clang diagnostic push
@@ -933,6 +934,14 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
         return;
     }
     if (page == FDPageVideo || page == FDPageMenu || page == FDPageUser) {
+        // 抢福袋期也要刷 feed：直播预览卡是刷出来的，停着不动永远遇不到
+        NSDate *nowAdv = [NSDate date];
+        if (!self->_nextFeedAdvance) self->_nextFeedAdvance = [nowAdv dateByAddingTimeInterval:FDNum(FDWatchSecKey, 5)];
+        if ([nowAdv compare:self->_nextFeedAdvance] == NSOrderedDescending) {
+            self->_nextFeedAdvance = [nowAdv dateByAddingTimeInterval:FDNum(FDWatchSecKey, 5)];
+            [self setStatus:@"抢福袋期 · 刷feed找直播"];
+            [self browseAdvanceFeed];
+        }
         [self enterRoomFromFeed];
         return;
     }
