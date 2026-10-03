@@ -218,7 +218,8 @@ static BOOL FDTapViaAncestorSelector(UIView *view) {
                 if (([lower containsString:@"select"] || [lower containsString:@"switchtab"] ||
                      [lower containsString:@"ontapitem"] || [lower containsString:@"tabitem"]) &&
                     ![lower hasPrefix:@"set"] && ![lower containsString:@"didselect"] &&
-                    ![lower containsString:@"willselect"] && ![lower containsString:@"gesture"]) {
+                    ![lower containsString:@"willselect"] && ![lower containsString:@"gesture"] &&
+                    ![lower containsString:@"progress"]) {
                     NSMethodSignature *sig = [v methodSignatureForSelector:s];
                     if (sig && sig.numberOfArguments == 3) { // 1 个对象参数
                         #pragma clang diagnostic push
@@ -755,7 +756,7 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
     FDScanPass *pass = [FDScanPass new];
     if (gFDPhase == FDPhaseGrab) {
         pass.bagContains = @[@"福袋"];
-        pass.claimContains = @[@"参与抽奖", @"一键发表评论", @"去发表评论", @"立即参与", @"参与", @"立即抢"];
+        pass.claimContains = @[@"参与抽奖", @"一键发表评论", @"去发表评论", @"立即参与", @"参与", @"立即抢", @"点击进入直播间"];
         pass.giveupContains = @[@"粉丝团点亮且达到", @"转发", @"分享直播间", @"仅会员可参与", @"不满足参与条件", @"活动已经结束"];
         pass.cleanupContains = @[@"我知道了", @"知道了", @"重新加载", @"领取奖品"];
         pass.a11yNeed = @[@"点赞", @"赞", @"评论", @"关闭"];
@@ -996,6 +997,19 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
 - (void)enterRoomFromFeed {
     if (self->_nextEnterTry && [[NSDate date] compare:self->_nextEnterTry] == NSOrderedAscending) return;
     self->_nextEnterTry = [NSDate dateWithTimeIntervalSinceNow:8.0];
+    // ⓪ 直播预览卡（feed 里嵌的直播间，带"点击进入直播间"按钮）——最优先，按钮可直接点
+    @try {
+        FDScanPass *pv = [FDScanPass new];
+        pv.claimContains = @[@"点击进入直播间"];
+        pv.deadline = CFAbsoluteTimeGetCurrent() + 0.05;
+        [FDScanner runPass:pv];
+        if (pv.claimHit && [FDTap tapView:pv.claimHit]) {
+            [self setStatus:@"进房：直播预览卡"];
+            FDLog(@"enter: live preview card tapped");
+            [self verifyEntryThenDeeplink];
+            return;
+        }
+    } @catch (NSException *e) { }
     // ① 直播 tab：iOS 底部 tab 标题/标签为 "直播"；兼容安卓式 "直播，" 前缀
     UIView *tab = [self findLiveTab];
     if (tab) {
@@ -1049,13 +1063,24 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
     NSInteger okIdx = (NSInteger)[d doubleForKey:@"fudai.liveSchemeOK"];
     NSInteger idx = (NSInteger)[d doubleForKey:@"fudai.liveSchemeIdx"];
     if (okIdx >= 0 && okIdx < (NSInteger)schemes.count) {
-        // 已验证可用的优先
+        // 已验证可用的优先（首次命中只是"疑似"，连续两次确认才保持）
         NSString *scheme = schemes[okIdx];
         NSURL *u = [NSURL URLWithString:scheme];
         if (u) [UIApplication.sharedApplication openURL:u options:@{} completionHandler:nil];
         [self setStatus:[NSString stringWithFormat:@"进房：深链(%ld)", (long)okIdx]];
         FDLog(@"enter: deep link (known-good) %@", scheme);
-        [self verifyDeepLinkLanded:okIdx];
+        __weak typeof(self) ws = self;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            __strong typeof(ws) strongSelf = ws;
+            if (!strongSelf || !strongSelf->_running) return;
+            UIViewController *top = FDTopVC();
+            NSString *cls = NSStringFromClass([top class]);
+            if ([cls rangeOfString:@"Live" options:NSCaseInsensitiveSearch].location == NSNotFound) {
+                FDLog(@"enter: known-good scheme failed again, clearing");
+                [d setDouble:-1 forKey:@"fudai.liveSchemeOK"];
+                [d setDouble:okIdx + 1 >= (double)schemes.count ? 0 : okIdx + 1 forKey:@"fudai.liveSchemeIdx"];
+            }
+        });
         return;
     }
     if (idx >= (NSInteger)schemes.count) idx = 0;
@@ -1071,9 +1096,17 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
         UIViewController *top = FDTopVC();
         NSString *cls = NSStringFromClass([top class]);
         if ([cls rangeOfString:@"Live" options:NSCaseInsensitiveSearch].location != NSNotFound) {
-            [d setDouble:idx forKey:@"fudai.liveSchemeOK"];
-            FDLog(@"enter: deep link %ld WORKS, saved", (long)idx);
+            NSInteger pend = (NSInteger)[d doubleForKey:@"fudai.liveSchemePending"];
+            if (pend == idx) {
+                [d setDouble:idx forKey:@"fudai.liveSchemeOK"];
+                [d setDouble:-1 forKey:@"fudai.liveSchemePending"];
+                FDLog(@"enter: deep link %ld CONFIRMED twice, saved", (long)idx);
+            } else {
+                [d setDouble:idx forKey:@"fudai.liveSchemePending"];
+                FDLog(@"enter: deep link %ld first hit, pending confirm", (long)idx);
+            }
         } else {
+            [d setDouble:-1 forKey:@"fudai.liveSchemePending"];
             [d setDouble:idx + 1 forKey:@"fudai.liveSchemeIdx"];
             FDLog(@"enter: deep link %ld landed on %@, rotating", (long)idx, cls);
         }
