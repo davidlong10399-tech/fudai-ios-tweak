@@ -1,6 +1,6 @@
 Package: com.fudai.ios
 Name: FuDai iOS
-Version: 0.8.0
+Version: 0.8.1
 Architecture: iphoneos-arm64e
 Description: Douyin lucky-bag helper (full-auto: native autoplay guard + DyAct grab chain)
 Maintainer: local

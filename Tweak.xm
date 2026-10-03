@@ -239,6 +239,27 @@ static BOOL FDTapViaAncestorSelector(UIView *view) {
     return NO;
 }
 
+// 分段控件兜底：抖音顶部 tab 栏是 MultiTabSegmentedControl 系，按标题选中"直播"段
+static BOOL FDTapViaSegmentedControl(UIView *view) {
+    UIView *v = view;
+    for (int i = 0; i < 8 && v; i++) {
+        if ([v isKindOfClass:UISegmentedControl.class]) {
+            UISegmentedControl *seg = (UISegmentedControl *)v;
+            for (NSInteger sIdx = 0; sIdx < (NSInteger)seg.numberOfSegments; sIdx++) {
+                NSString *t = [seg titleForSegmentAtIndex:sIdx] ?: @"";
+                if ([t isEqualToString:@"直播"]) {
+                    [seg setSelectedSegmentIndex:sIdx];
+                    [seg sendActionsForControlEvents:UIControlEventValueChanged];
+                    FDLog(@"tap: segmented index %ld (直播)", (long)sIdx);
+                    return YES;
+                }
+            }
+        }
+        v = v.superview;
+    }
+    return NO;
+}
+
 static BOOL FDTapViaRuntimeAction(UIView *view) {
     @try {
         Class cls = [view class];
@@ -256,7 +277,7 @@ static BOOL FDTapViaRuntimeAction(UIView *view) {
                 if (looksAction &&
                     ![lower containsString:@"gesture"] && ![lower hasPrefix:@"set"] &&
                     ![lower containsString:@"cancel"] && ![lower containsString:@"did"] &&
-                    ![lower containsString:@"will"]) {
+                    ![lower containsString:@"block"] && ![lower containsString:@"will"]) {
                     NSMethodSignature *sig = [view methodSignatureForSelector:s];
                     if (sig && sig.numberOfArguments == 2) { // 无参方法
                         #pragma clang diagnostic push
@@ -305,6 +326,7 @@ static BOOL FDTapViaRuntimeAction(UIView *view) {
         v = v.superview;
     }
     if (FDTapViaCollectionView(view)) return YES;
+    if (FDTapViaSegmentedControl(view)) return YES;
     if (FDTapViaAncestorSelector(view)) return YES;
     if (FDTapViaRuntimeAction(view)) return YES;
     FDLog(@"tap: no target %@", NSStringFromClass([view class]));
@@ -1009,8 +1031,8 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
     // ⓪ 直播预览卡（feed 里嵌的直播间，带"点击进入直播间"按钮）——最优先，按钮可直接点
     @try {
         FDScanPass *pv = [FDScanPass new];
-        pv.claimContains = @[@"点击进入直播间"];
-        pv.deadline = CFAbsoluteTimeGetCurrent() + 0.05;
+        pv.claimContains = @[@"点击进入直播间", @"进入直播间"];
+        pv.deadline = CFAbsoluteTimeGetCurrent() + 0.12;
         [FDScanner runPass:pv];
         if (pv.claimHit && [FDTap tapView:pv.claimHit]) {
             [self setStatus:@"进房：直播预览卡"];
