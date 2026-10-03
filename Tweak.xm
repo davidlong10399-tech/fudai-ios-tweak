@@ -637,6 +637,7 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
     long long _roomSize;
     NSInteger _unknownTicks;
     NSInteger _bagType;          // 0普通 2超级（本次面板）
+    NSInteger _feedScrollsNoPreview;
 }
 
 + (instancetype)shared { static FDCoordinator *x; static dispatch_once_t once; dispatch_once(&once, ^{ x=[self new]; }); return x; }
@@ -893,9 +894,14 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
             return;
         }
         default: {
-            // 路径3：强滚 + 补发结束回调
+            // 路径3：强滚 + 补发结束回调（守卫：目标超出已加载内容→虚空黑屏，等待预加载）
+            CGFloat target = sv.contentOffset.y + sv.bounds.size.height;
+            if (target > sv.contentSize.height - 40) {
+                FDLog(@"browse: target %.0f near contentSize %.0f, wait preload", target, sv.contentSize.height);
+                return;
+            }
             CGPoint off = sv.contentOffset;
-            off.y += sv.bounds.size.height;
+            off.y = target;
             [sv setContentOffset:off animated:NO];
             [self fireScrollEndFor:sv];
             FDLog(@"browse: fallback scrolled y=%.0f + end callback", off.y);
@@ -961,6 +967,17 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
         if (!self->_nextFeedAdvance) self->_nextFeedAdvance = [nowAdv dateByAddingTimeInterval:FDNum(FDWatchSecKey, 5)];
         if ([nowAdv compare:self->_nextFeedAdvance] == NSOrderedDescending) {
             self->_nextFeedAdvance = [nowAdv dateByAddingTimeInterval:FDNum(FDWatchSecKey, 5)];
+            self->_feedScrollsNoPreview++;
+            if (self->_feedScrollsNoPreview > 12) {
+                if (self->_feedScrollsNoPreview == 13) {
+                    [self setStatus:@"暂未刷到直播 · 稍后重试"];
+                    FDLog(@"grab: 12 scrolls no preview, pause 30s");
+                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(30.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                        self->_feedScrollsNoPreview = 0;
+                    });
+                }
+                return;
+            }
             [self setStatus:@"抢福袋期 · 刷feed找直播"];
             [self browseAdvanceFeed];
         }
@@ -1902,7 +1919,8 @@ static BOOL gAutoPlay1, gAutoPlay2, gAutoPlay3, gAutoPlay4, gObserveIM, gLuckyBo
 static void FDDumpRuntimeInfo(void) {
     @autoreleasepool {
         NSArray *keywords = @[@"RedPacket", @"LuckyBag", @"HongBao", @"Lucky", @"Lottery",
-                              @"LuckyBox", @"Rush", @"FuDai", @"AutoPlay"];
+                              @"LuckyBox", @"Rush", @"FuDai", @"AutoPlay",
+                              @"AWEHP", @"MultiTab", @"TopTab", @"Segmented"];
         unsigned int count = 0;
         Class *classes = objc_copyClassList(&count);
         NSMutableString *out = [NSMutableString string];
