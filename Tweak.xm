@@ -1029,7 +1029,8 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
 - (void)verifyEntryThenDeeplink {
     __weak typeof(self) ws = self;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        if (!ws || !ws->_running) return;
+        __strong typeof(ws) strongSelf = ws;
+        if (!strongSelf || !strongSelf->_running) return;
         UIViewController *top = FDTopVC();
         NSString *cls = NSStringFromClass([top class]);
         if ([cls rangeOfString:@"Live" options:NSCaseInsensitiveSearch].location != NSNotFound) {
@@ -1065,7 +1066,8 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
     FDLog(@"enter: deep link candidate %ld %@", (long)idx, scheme);
     __weak typeof(self) ws = self;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        if (!ws || !ws->_running) return;
+        __strong typeof(ws) strongSelf = ws;
+        if (!strongSelf || !strongSelf->_running) return;
         UIViewController *top = FDTopVC();
         NSString *cls = NSStringFromClass([top class]);
         if ([cls rangeOfString:@"Live" options:NSCaseInsensitiveSearch].location != NSNotFound) {
@@ -1081,7 +1083,8 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
 - (void)verifyDeepLinkLanded:(NSInteger)idx {
     __weak typeof(self) ws = self;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        if (!ws || !ws->_running) return;
+        __strong typeof(ws) strongSelf = ws;
+        if (!strongSelf || !strongSelf->_running) return;
         UIViewController *top = FDTopVC();
         NSString *cls = NSStringFromClass([top class]);
         if ([cls rangeOfString:@"Live" options:NSCaseInsensitiveSearch].location != NSNotFound) {
