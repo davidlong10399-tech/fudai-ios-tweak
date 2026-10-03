@@ -62,6 +62,7 @@ static NSString * const FDCommentsKey     = @"fudai.comments";
 static NSString * const FDSearchKey       = @"fudai.searchKey";
 static NSString * const FDAttendModeKey   = @"fudai.attendMode";      // 6=立马
 static NSString * const FDWatchSecKey     = @"fudai.watchSeconds";    // 每条视频秒数
+static NSString * const FDLiveSchemeKey   = @"fudai.liveScheme";      // 直播深链
 static NSString * const FDFansTeamKey     = @"fudai.fansTeam";
 static NSString * const FDFansYuanKey     = @"fudai.fansTeamYuan";
 
@@ -200,6 +201,41 @@ static BOOL FDTapViaCollectionView(UIView *view) {
     }
 }
 
+// 运行时动作搜索：自定义视图（如 tab 项）常带私有 tap/click 方法，全部常规途径失败后尝试
+static BOOL FDTapViaRuntimeAction(UIView *view) {
+    @try {
+        Class cls = [view class];
+        for (int depth = 0; depth < 2 && cls; depth++) {
+            unsigned int mcount = 0;
+            Method *methods = class_copyMethodList(cls, &mcount);
+            for (unsigned int i = 0; i < mcount; i++) {
+                SEL s = method_getName(methods[i]);
+                NSString *name = NSStringFromSelector(s);
+                if (name.length > 24) continue;
+                NSString *lower = [name lowercaseString];
+                if (([lower containsString:@"tap"] || [lower containsString:@"click"] ||
+                     [lower containsString:@"selected"] || [lower containsString:@"selectitem"]) &&
+                    ![lower containsString:@"gesture"] && ![lower containsString:@"pan"] &&
+                    ![lower containsString:@"cancel"] && ![lower hasPrefix:@"set"] &&
+                    ![lower containsString:@"did"] && ![lower containsString:@"will"]) {
+                    NSMethodSignature *sig = [view methodSignatureForSelector:s];
+                    if (sig && sig.numberOfArguments == 2) { // 无参方法
+                        #pragma clang diagnostic push
+                        #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+                        [view performSelector:s];
+                        #pragma clang diagnostic pop
+                        FDLog(@"tap: runtime action %@ on %@", name, NSStringFromClass(cls));
+                        return YES;
+                    }
+                }
+            }
+            free(methods);
+            cls = class_getSuperclass(cls);
+        }
+    } @catch (NSException *e) { }
+    return NO;
+}
+
 @implementation FDTap
 + (BOOL)tapView:(UIView *)view {
     UIView *v = view;
@@ -230,6 +266,7 @@ static BOOL FDTapViaCollectionView(UIView *view) {
         v = v.superview;
     }
     if (FDTapViaCollectionView(view)) return YES;
+    if (FDTapViaRuntimeAction(view)) return YES;
     FDLog(@"tap: no target %@", NSStringFromClass([view class]));
     return NO;
 }
@@ -944,7 +981,16 @@ typedef NS_ENUM(NSInteger, FDRoomStage) {
         FDLog(@"enter: live badge tapped");
         return;
     }
-    // ③ 都没有：等下个 tick 重试（rate-limit 已在头部）
+    // ③ 深链进直播间（fudai.liveScheme；手机在线时可用 uiopen 逐个验证候选路由）
+    NSString *scheme = FDStr(FDLiveSchemeKey, @"snssdk1128://live");
+    NSURL *u = [NSURL URLWithString:scheme];
+    if (u && scheme.length > 8) {
+        [UIApplication.sharedApplication openURL:u options:@{} completionHandler:nil];
+        [self setStatus:@"进房：深链"];
+        FDLog(@"enter: deep link %@", scheme);
+        return;
+    }
+    // ④ 都没有：等下个 tick 重试（rate-limit 已在头部）
     FDLog(@"enter: no live tab/badge this tick");
 }
 
@@ -1817,6 +1863,7 @@ static void FDInitHooks(void) {
             FDFilterRoomKey: @NO,
             FDWaitRoomKey: @5,
             FDWatchSecKey: @5,
+            FDLiveSchemeKey: @"snssdk1128://live",
             FDMaxSwitchKey: @60,
             FDLikeRateKey: @30,
             FDLikeMinKey: @5,
